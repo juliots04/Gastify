@@ -11,26 +11,22 @@
     <uses-permission
         android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Alarmas precisas: requiere autorización del usuario -->
+
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <application
-
         android:allowBackup="true"
-
         android:icon="@mipmap/ic_launcher"
-
         android:label="@string/app_name"
-
         android:roundIcon="@mipmap/ic_launcher_round"
-
         android:supportsRtl="true"
-
         android:theme="@style/Theme.Gastify">
 
         <activity
-
             android:name=".MainActivity"
-
             android:exported="true"
-
             android:launchMode="singleTop">
 
             <intent-filter>
@@ -45,34 +41,25 @@
 
         </activity>
 
-        <!-- RECORDATORIOS PROGRAMADOS -->
+        <!-- RECORDATORIOS -->
 
         <receiver
-
             android:name=".notifications.ReminderReceiver"
-
             android:enabled="true"
-
             android:exported="false" />
 
-        <!-- BOTONES DE CONFIRMACIÓN -->
+        <!-- ACCIONES: PAGUÉ / MÁS TARDE -->
 
         <receiver
-
             android:name=".notifications.ReminderActionReceiver"
-
             android:enabled="true"
-
             android:exported="false" />
 
-        <!-- RECUPERAR RECORDATORIOS -->
+        <!-- REPROGRAMACIÓN -->
 
         <receiver
-
             android:name=".notifications.ReminderBootReceiver"
-
             android:enabled="true"
-
             android:exported="false">
 
             <intent-filter>
@@ -88,6 +75,9 @@
 
                 <action
                     android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+
+                <action
+                    android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
 
             </intent-filter>
 

@@ -1,16 +1,13 @@
 package com.example.gastify.notifications
 
 import android.Manifest
-
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-
 import android.net.Uri
 import android.os.Build
 
@@ -20,15 +17,10 @@ import androidx.core.content.ContextCompat
 
 import com.example.gastify.MainActivity
 import com.example.gastify.R
-
 import com.example.gastify.data.local.ReminderStore
 import com.example.gastify.data.model.PassageReminder
 
-import com.google.firebase.auth.FirebaseAuth
-
 import java.math.BigDecimal
-import java.text.NumberFormat
-import java.util.Locale
 
 class ReminderReceiver : BroadcastReceiver() {
 
@@ -46,10 +38,15 @@ class ReminderReceiver : BroadcastReceiver() {
         intent: Intent
     ) {
 
-        if (
-            intent.action !=
-            ReminderScheduler.ACTION_REMINDER
-        ) {
+        val isRegular =
+            intent.action ==
+                ReminderScheduler.ACTION_REMINDER
+
+        val isSnooze =
+            intent.action ==
+                ReminderScheduler.ACTION_SNOOZE
+
+        if (!isRegular && !isSnooze) {
             return
         }
 
@@ -74,19 +71,44 @@ class ReminderReceiver : BroadcastReceiver() {
             return
         }
 
-        // Programar el siguiente aviso.
+        // Validar la sesión guardada localmente.
+        // No dependemos de cargar FirebaseAuth
+        // para mostrar el aviso en segundo plano.
 
-        ReminderScheduler.schedule(
-            context,
-            reminder
+        if (
+            reminder.userId !=
+            ReminderScheduler.activeUserId(context)
+        ) {
+            return
+        }
+
+        // Programar el siguiente aviso normal.
+        // Un aviso aplazado NO genera otra repetición.
+
+        if (isRegular) {
+
+            ReminderScheduler.schedule(
+                context,
+                reminder
+            )
+        }
+
+        // Evitar volver a mostrar un evento
+        // que ya fue confirmado.
+
+        val eventId =
+            "${reminder.id}_${triggerTime}"
+
+        val responses = context.getSharedPreferences(
+            "gastify_reminder_responses",
+            Context.MODE_PRIVATE
         )
 
-        val currentUserId = FirebaseAuth
-            .getInstance()
-            .currentUser
-            ?.uid
-
-        if (currentUserId != reminder.userId) {
+        if (
+            responses.contains(
+                "response_$eventId"
+            )
+        ) {
             return
         }
 
@@ -95,14 +117,26 @@ class ReminderReceiver : BroadcastReceiver() {
             Build.VERSION_CODES.TIRAMISU
         ) {
 
-            if (
-                ContextCompat.checkSelfPermission(
+            val permission = ContextCompat
+                .checkSelfPermission(
                     context,
                     Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
+                )
+
+            if (
+                permission !=
+                PackageManager.PERMISSION_GRANTED
             ) {
                 return
             }
+        }
+
+        if (
+            !NotificationManagerCompat
+                .from(context)
+                .areNotificationsEnabled()
+        ) {
+            return
         }
 
         createNotificationChannel(context)
@@ -110,9 +144,14 @@ class ReminderReceiver : BroadcastReceiver() {
         showNotification(
             context,
             reminder,
-            triggerTime
+            triggerTime,
+            isSnooze
         )
     }
+
+    // ==========================================
+    // CANAL DE NOTIFICACIONES
+    // ==========================================
 
     private fun createNotificationChannel(
         context: Context
@@ -132,7 +171,7 @@ class ReminderReceiver : BroadcastReceiver() {
         ).apply {
 
             description =
-                "Avisos para confirmar pagos de transporte."
+                "Confirmación de pagos de transporte."
 
             enableVibration(true)
         }
@@ -141,30 +180,30 @@ class ReminderReceiver : BroadcastReceiver() {
             NotificationManager::class.java
         )
 
-        manager.createNotificationChannel(
-            channel
-        )
+        manager.createNotificationChannel(channel)
     }
+
+    // ==========================================
+    // MOSTRAR NOTIFICACIÓN
+    // ==========================================
 
     private fun showNotification(
         context: Context,
         reminder: PassageReminder,
-        triggerTime: Long
+        triggerTime: Long,
+        isSnooze: Boolean
     ) {
-
-        val amount = formatMoney(
-            reminder.amountCents
-        )
 
         val notificationId = (
             reminder.id + triggerTime
         ).hashCode()
 
-        // ======================================
-        // ABRIR APLICACIÓN
-        // ======================================
+        val amount = BigDecimal.valueOf(
+            reminder.amountCents,
+            2
+        ).toPlainString()
 
-        val openAppIntent = Intent(
+        val openIntent = Intent(
             context,
             MainActivity::class.java
         ).apply {
@@ -177,14 +216,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val openPendingIntent = PendingIntent.getActivity(
             context,
             notificationId,
-            openAppIntent,
+            openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
         )
-
-        // ======================================
-        // BOTÓN: SÍ, PAGUÉ
-        // ======================================
 
         val paidIntent = createActionIntent(
             context,
@@ -193,95 +228,82 @@ class ReminderReceiver : BroadcastReceiver() {
             ReminderActionReceiver.ACTION_PAID
         )
 
-        // ======================================
-        // BOTÓN: NO
-        // ======================================
-
-        val notPaidIntent = createActionIntent(
+        val laterIntent = createActionIntent(
             context,
             reminder,
             triggerTime,
-            ReminderActionReceiver.ACTION_NOT_PAID
+            ReminderActionReceiver.ACTION_LATER
         )
-
-        // ======================================
-        // CREAR NOTIFICACIÓN
-        // ======================================
 
         val notification = NotificationCompat.Builder(
             context,
             CHANNEL_ID
         )
-
             .setSmallIcon(
                 R.drawable.ic_notification_bus
             )
-
             .setContentTitle(
-                "¿Ya pagaste tu pasaje?"
+                if (isSnooze) {
+                    "Recordatorio de tu pasaje"
+                } else {
+                    "¿Ya pagaste tu pasaje?"
+                }
             )
-
             .setContentText(
-                "${reminder.title} • $amount"
+                "${reminder.title} • S/ $amount"
             )
-
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .bigText(
-                        "${reminder.title}\nImporte: $amount"
+                        "${reminder.title}\n" +
+                            "Importe: S/ $amount\n" +
+                            "Confirma el pago o aplaza el aviso."
                     )
             )
-
             .setPriority(
                 NotificationCompat.PRIORITY_HIGH
             )
-
             .setCategory(
                 NotificationCompat.CATEGORY_REMINDER
             )
-
-            .setContentIntent(
-                openPendingIntent
-            )
-
+            .setContentIntent(openPendingIntent)
             .addAction(
                 R.drawable.ic_notification_bus,
                 "Sí, pagué",
                 paidIntent
             )
-
             .addAction(
                 R.drawable.ic_notification_bus,
-                "No",
-                notPaidIntent
+                "Más tarde (10 min)",
+                laterIntent
             )
-
             .setAutoCancel(true)
-
             .build()
 
         try {
 
-            NotificationManagerCompat.from(context)
+            NotificationManagerCompat
+                .from(context)
                 .notify(
                     notificationId,
                     notification
                 )
 
         } catch (_: SecurityException) {
-            // Permiso no disponible.
+
+            // Permiso de notificación revocado.
         }
     }
 
     // ==========================================
-    // INTENT PARA CADA BOTÓN
+    // BOTONES DE NOTIFICACIÓN
     // ==========================================
 
     private fun createActionIntent(
         context: Context,
         reminder: PassageReminder,
         triggerTime: Long,
-        action: String
+        actionName: String
     ): PendingIntent {
 
         val intent = Intent(
@@ -289,32 +311,18 @@ class ReminderReceiver : BroadcastReceiver() {
             ReminderActionReceiver::class.java
         ).apply {
 
-            this.action = action
-
-            // URI única para cada botón y aviso.
+            action = actionName
 
             data = Uri.parse(
-                "gastify://response/$action/${reminder.id}/$triggerTime"
+                "gastify://response/" +
+                    "$actionName/" +
+                    "${reminder.id}/" +
+                    triggerTime
             )
 
             putExtra(
                 ReminderActionReceiver.EXTRA_USER_ID,
                 reminder.userId
-            )
-
-            putExtra(
-                ReminderActionReceiver.EXTRA_WORKSPACE_ID,
-                reminder.workspaceId
-            )
-
-            putExtra(
-                ReminderActionReceiver.EXTRA_ACCOUNT_ID,
-                reminder.accountId
-            )
-
-            putExtra(
-                ReminderActionReceiver.EXTRA_CATEGORY_ID,
-                reminder.categoryId
             )
 
             putExtra(
@@ -326,16 +334,6 @@ class ReminderReceiver : BroadcastReceiver() {
                 ReminderActionReceiver.EXTRA_TRIGGER_TIME,
                 triggerTime
             )
-
-            putExtra(
-                ReminderActionReceiver.EXTRA_AMOUNT_CENTS,
-                reminder.amountCents
-            )
-
-            putExtra(
-                ReminderActionReceiver.EXTRA_TITLE,
-                reminder.title
-            )
         }
 
         return PendingIntent.getBroadcast(
@@ -345,27 +343,5 @@ class ReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    // ==========================================
-    // FORMATEAR DINERO
-    // ==========================================
-
-    private fun formatMoney(
-        cents: Long
-    ): String {
-
-        val formatter = NumberFormat.getNumberInstance(
-            Locale.forLanguageTag("es-PE")
-        )
-
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-
-        return "S/ ${
-            formatter.format(
-                BigDecimal.valueOf(cents, 2)
-            )
-        }"
     }
 }

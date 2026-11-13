@@ -3,12 +3,14 @@ package com.example.gastify.ui.screens
 import android.Manifest
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,55 +18,41 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material3.*
-
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 import com.example.gastify.data.local.ReminderStore
-
+import com.example.gastify.data.model.CategoryType
 import com.example.gastify.data.model.PassageReminder
 import com.example.gastify.data.model.Workspace
-import com.example.gastify.data.model.CategoryType
-
 import com.example.gastify.notifications.ReminderScheduler
-
 import com.example.gastify.ui.components.GastifyIcons
 import com.example.gastify.ui.theme.*
-
 import com.example.gastify.viewmodel.AccountViewModel
 import com.example.gastify.viewmodel.CategoryViewModel
 
 import kotlinx.coroutines.launch
 
 import java.math.BigDecimal
-import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-
-// ==========================================
-// CONFIGURACIÓN DE DÍAS
-// ==========================================
 
 private val reminderDays = listOf(
     1 to "Lu",
@@ -76,63 +64,43 @@ private val reminderDays = listOf(
     7 to "Do"
 )
 
-// ==========================================
-// FORMATO DE MONEDA
-// ==========================================
+private fun reminderMoney(cents: Long): String {
 
-private fun formatReminderMoney(
-    cents: Long
-): String {
-
-    val formatter = NumberFormat.getNumberInstance(
-        Locale.forLanguageTag("es-PE")
-    )
-
-    formatter.minimumFractionDigits = 2
-    formatter.maximumFractionDigits = 2
-
-    val amount = BigDecimal.valueOf(cents, 2)
-
-    return "S/ ${formatter.format(amount)}"
+    return "S/ " + BigDecimal.valueOf(
+        cents,
+        2
+    ).toPlainString()
 }
 
-// ==========================================
-// CONVERTIR MONEDA
-// ==========================================
-
 private fun parseReminderMoney(
-    text: String
+    value: String
 ): Long? {
 
-    val clean = text.trim()
+    val text = value.trim()
 
     if (
         !Regex("""^\d{1,10}([.,]\d{1,2})?$""")
-            .matches(clean)
+            .matches(text)
     ) {
         return null
     }
 
     return try {
 
-        val cents = BigDecimal(
-            clean.replace(',', '.')
-        ).movePointRight(2).longValueExact()
-
-        cents.takeIf {
-            it in 1L..999_999_999_999L
-        }
+        BigDecimal(
+            text.replace(',', '.')
+        ).movePointRight(2)
+            .longValueExact()
+            .takeIf {
+                it in 1L..999_999_999_999L
+            }
 
     } catch (_: Exception) {
         null
     }
 }
 
-// ==========================================
-// FORMATO DE HORA
-// ==========================================
-
-private fun formatReminderTime(
+private fun reminderTime(
     hour: Int,
     minute: Int
 ): String {
@@ -145,11 +113,7 @@ private fun formatReminderTime(
     )
 }
 
-// ==========================================
-// FORMATO DE PRÓXIMO RECORDATORIO
-// ==========================================
-
-private fun formatNextReminder(
+private fun reminderNext(
     reminder: PassageReminder
 ): String {
 
@@ -157,25 +121,17 @@ private fun formatNextReminder(
         return "Desactivado"
     }
 
-    val nextTime = ReminderScheduler.calculateNextTime(
-        reminder
-    ) ?: return "Sin programación"
+    val next = ReminderScheduler
+        .calculateNextTime(reminder)
+        ?: return "Sin programación"
 
-    val formatter = SimpleDateFormat(
+    return SimpleDateFormat(
         "EEE dd MMM • HH:mm",
         Locale.forLanguageTag("es-PE")
-    )
-
-    return formatter.format(
-        Date(nextTime)
-    )
+    ).format(Date(next))
 }
 
-// ==========================================
-// FORMATO DE DÍAS
-// ==========================================
-
-private fun formatReminderDays(
+private fun reminderDaysText(
     days: Set<Int>
 ): String {
 
@@ -192,19 +148,15 @@ private fun formatReminderDays(
         }
 }
 
-// ==========================================
-// PERMISO DE NOTIFICACIONES
-// ==========================================
-
 private fun notificationsEnabled(
     context: Context
 ): Boolean {
 
-    val systemEnabled = NotificationManagerCompat
-        .from(context)
-        .areNotificationsEnabled()
-
-    if (!systemEnabled) {
+    if (
+        !NotificationManagerCompat
+            .from(context)
+            .areNotificationsEnabled()
+    ) {
         return false
     }
 
@@ -222,10 +174,6 @@ private fun notificationsEnabled(
     return true
 }
 
-// ==========================================
-// PANTALLA PRINCIPAL
-// ==========================================
-
 @Composable
 fun RemindersScreen(
     userId: String,
@@ -240,10 +188,6 @@ fun RemindersScreen(
     }
 
     val scope = rememberCoroutineScope()
-
-    // ======================================
-    // VIEWMODELS
-    // ======================================
 
     val accountVm: AccountViewModel = viewModel(
         key = "accounts_${userId}_${workspace.id}",
@@ -271,14 +215,11 @@ fun RemindersScreen(
         categoryVm.startListening()
 
         onDispose {
+
             accountVm.stopListening()
             categoryVm.stopListening()
         }
     }
-
-    // ======================================
-    // LISTA DE RECORDATORIOS
-    // ======================================
 
     var reminders by remember(
         userId,
@@ -293,7 +234,7 @@ fun RemindersScreen(
         )
     }
 
-    fun refreshReminders() {
+    fun refresh() {
 
         reminders = store.getByWorkspace(
             userId,
@@ -301,8 +242,19 @@ fun RemindersScreen(
         )
     }
 
+    val snackbar = remember {
+        SnackbarHostState()
+    }
+
+    fun showMessage(message: String) {
+
+        scope.launch {
+            snackbar.showSnackbar(message)
+        }
+    }
+
     // ======================================
-    // NOTIFICACIONES
+    // PERMISOS
     // ======================================
 
     var notificationsAllowed by remember {
@@ -311,44 +263,115 @@ fun RemindersScreen(
         )
     }
 
-    val snackbar = remember {
-        SnackbarHostState()
+    var exactAllowed by remember {
+        mutableStateOf(
+            ReminderScheduler.canScheduleExact(context)
+        )
     }
 
-    val notificationPermissionLauncher =
+    val notificationLauncher =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission()
-        ) { granted ->
+            ActivityResultContracts.RequestPermission()
+        ) {
 
-            notificationsAllowed = granted &&
+            notificationsAllowed =
                 notificationsEnabled(context)
 
             if (!notificationsAllowed) {
 
-                scope.launch {
-
-                    snackbar.showSnackbar(
-                        "Debes permitir las notificaciones para recibir avisos."
-                    )
-                }
+                showMessage(
+                    "Debes permitir las notificaciones."
+                )
             }
         }
 
-    fun requestNotificationPermission() {
+    val exactAlarmLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) {
+
+            exactAllowed =
+                ReminderScheduler.canScheduleExact(context)
+
+            ReminderScheduler.scheduleAll(context)
+
+            if (exactAllowed) {
+
+                showMessage(
+                    "Alarmas precisas activadas."
+                )
+            }
+        }
+
+    fun requestNotifications() {
 
         if (
             Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.TIRAMISU
+            Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
         ) {
 
-            notificationPermissionLauncher.launch(
+            notificationLauncher.launch(
                 Manifest.permission.POST_NOTIFICATIONS
             )
+
+        } else {
+
+            try {
+
+                val intent = Intent(
+                    Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                ).apply {
+
+                    putExtra(
+                        Settings.EXTRA_APP_PACKAGE,
+                        context.packageName
+                    )
+                }
+
+                context.startActivity(intent)
+
+            } catch (_: Exception) {
+
+                showMessage(
+                    "Activa las notificaciones desde Ajustes."
+                )
+            }
+        }
+    }
+
+    fun requestExactAlarms() {
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.S
+        ) {
+
+            try {
+
+                val intent = Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse(
+                        "package:${context.packageName}"
+                    )
+                )
+
+                exactAlarmLauncher.launch(intent)
+
+            } catch (_: Exception) {
+
+                showMessage(
+                    "Activa Alarmas y recordatorios desde los ajustes de Android."
+                )
+            }
         }
     }
 
     // ======================================
-    // ESTADOS DE FORMULARIO
+    // FORMULARIO
     // ======================================
 
     var showEditor by rememberSaveable {
@@ -359,7 +382,7 @@ fun RemindersScreen(
         mutableStateOf<String?>(null)
     }
 
-    var reminderTitle by rememberSaveable {
+    var title by rememberSaveable {
         mutableStateOf("")
     }
 
@@ -367,98 +390,77 @@ fun RemindersScreen(
         mutableStateOf("2.80")
     }
 
-    var selectedAccountId by rememberSaveable {
+    var accountId by rememberSaveable {
         mutableStateOf("")
     }
 
-    var selectedCategoryId by rememberSaveable {
+    var categoryId by rememberSaveable {
         mutableStateOf("")
     }
 
-    var selectedHour by rememberSaveable {
+    var hour by rememberSaveable {
         mutableStateOf(7)
     }
 
-    var selectedMinute by rememberSaveable {
+    var minute by rememberSaveable {
         mutableStateOf(30)
     }
 
-    // Bits 1-6: lunes a sábado.
-    // Cada bit representa un día.
-
-    var selectedDaysMask by rememberSaveable {
+    var daysMask by rememberSaveable {
         mutableStateOf(63)
     }
 
-    var reminderEnabled by rememberSaveable {
+    var enabled by rememberSaveable {
         mutableStateOf(true)
     }
 
-    var reminderToDeleteId by rememberSaveable {
+    var deleteId by rememberSaveable {
         mutableStateOf<String?>(null)
     }
 
-    // ======================================
-    // CATEGORÍAS DE GASTOS
-    // ======================================
+    val expenseCategories =
+        categoryState.categories.filter {
+            it.type == CategoryType.EXPENSE.name
+        }
 
-    val expenseCategories = categoryState.categories.filter {
-        it.type == CategoryType.EXPENSE.name
-    }
-
-    // ======================================
-    // ABRIR FORMULARIO
-    // ======================================
-
-    fun openEditor(
-        reminder: PassageReminder?
-    ) {
+    fun openEditor(reminder: PassageReminder?) {
 
         editingId = reminder?.id
 
-        reminderTitle = reminder?.title ?: ""
+        title = reminder?.title ?: ""
 
         amountText = reminder?.let {
-
             BigDecimal.valueOf(
                 it.amountCents,
                 2
             ).toPlainString()
-
         } ?: "2.80"
 
-        selectedAccountId = reminder?.accountId
-            ?: accountState.accounts.firstOrNull()?.id.orEmpty()
+        accountId = reminder?.accountId
+            ?: accountState.accounts.firstOrNull()
+                ?.id.orEmpty()
 
-        selectedCategoryId = reminder?.categoryId
-            ?: expenseCategories.firstOrNull()?.id.orEmpty()
+        categoryId = reminder?.categoryId
+            ?: expenseCategories.firstOrNull()
+                ?.id.orEmpty()
 
-        selectedHour = reminder?.hour ?: 7
+        hour = reminder?.hour ?: 7
 
-        selectedMinute = reminder?.minute ?: 30
+        minute = reminder?.minute ?: 30
 
-        selectedDaysMask = if (reminder != null) {
+        daysMask = reminder?.daysOfWeek?.fold(0) {
+                mask, day ->
 
-            reminder.daysOfWeek.fold(0) { mask, day ->
-                mask or (1 shl (day - 1))
-            }
+            mask or (1 shl (day - 1))
 
-        } else {
-            63
-        }
+        } ?: 63
 
-        reminderEnabled = reminder?.enabled ?: true
+        enabled = reminder?.enabled ?: true
 
         showEditor = true
     }
 
-    // ======================================
-    // GUARDAR RECORDATORIO
-    // ======================================
-
-    fun saveReminder(
-        reminder: PassageReminder
-    ) {
+    fun saveReminder(reminder: PassageReminder) {
 
         try {
 
@@ -469,46 +471,36 @@ fun RemindersScreen(
                 reminder
             )
 
-            refreshReminders()
+            refresh()
 
             showEditor = false
 
-            scope.launch {
-
-                snackbar.showSnackbar(
-                    "Recordatorio guardado correctamente."
-                )
-            }
+            showMessage(
+                "Recordatorio guardado correctamente."
+            )
 
             if (!notificationsAllowed) {
-                requestNotificationPermission()
+                requestNotifications()
             }
 
         } catch (exception: Exception) {
 
-            scope.launch {
-
-                snackbar.showSnackbar(
-                    exception.localizedMessage
-                        ?: "No se pudo guardar el recordatorio."
-                )
-            }
+            showMessage(
+                exception.localizedMessage
+                    ?: "No se pudo guardar."
+            )
         }
     }
 
-    // ======================================
-    // ACTIVAR / DESACTIVAR
-    // ======================================
-
-    fun changeReminderStatus(
+    fun changeStatus(
         reminder: PassageReminder,
-        enabled: Boolean
+        isEnabled: Boolean
     ) {
 
         try {
 
             val updated = reminder.copy(
-                enabled = enabled
+                enabled = isEnabled
             )
 
             store.save(updated)
@@ -518,31 +510,18 @@ fun RemindersScreen(
                 updated
             )
 
-            refreshReminders()
-
-            if (enabled && !notificationsAllowed) {
-                requestNotificationPermission()
-            }
+            refresh()
 
         } catch (exception: Exception) {
 
-            scope.launch {
-
-                snackbar.showSnackbar(
-                    exception.localizedMessage
-                        ?: "No se pudo actualizar el recordatorio."
-                )
-            }
+            showMessage(
+                exception.localizedMessage
+                    ?: "No se pudo actualizar."
+            )
         }
     }
 
-    // ======================================
-    // ELIMINAR RECORDATORIO
-    // ======================================
-
-    fun deleteReminder(
-        reminderId: String
-    ) {
+    fun deleteReminder(reminderId: String) {
 
         try {
 
@@ -553,31 +532,23 @@ fun RemindersScreen(
 
             store.delete(reminderId)
 
-            refreshReminders()
+            refresh()
 
-            reminderToDeleteId = null
+            deleteId = null
 
-            scope.launch {
-
-                snackbar.showSnackbar(
-                    "Recordatorio eliminado."
-                )
-            }
+            showMessage("Recordatorio eliminado.")
 
         } catch (exception: Exception) {
 
-            scope.launch {
-
-                snackbar.showSnackbar(
-                    exception.localizedMessage
-                        ?: "No se pudo eliminar el recordatorio."
-                )
-            }
+            showMessage(
+                exception.localizedMessage
+                    ?: "No se pudo eliminar."
+            )
         }
     }
 
     // ======================================
-    // INTERFAZ AMOLED
+    // INTERFAZ
     // ======================================
 
     Box(
@@ -588,32 +559,24 @@ fun RemindersScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
                 bottom = 32.dp
             ),
-
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp)
         ) {
-
-            // ==================================
-            // ENCABEZADO
-            // ==================================
 
             item {
 
                 Spacer(Modifier.height(16.dp))
 
-                TextButton(
-                    onClick = onBack
-                ) {
+                TextButton(onClick = onBack) {
 
                     Icon(
                         imageVector = GastifyIcons.back,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = null
                     )
 
                     Spacer(Modifier.width(6.dp))
@@ -628,10 +591,11 @@ fun RemindersScreen(
                 ) {
 
                     Icon(
-                        imageVector = Icons.Outlined.NotificationsActive,
+                        imageVector =
+                            Icons.Outlined.NotificationsActive,
                         contentDescription = null,
                         tint = PrimaryGreen,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(29.dp)
                     )
 
                     Spacer(Modifier.width(12.dp))
@@ -639,8 +603,7 @@ fun RemindersScreen(
                     Text(
                         text = "Recordatorios",
                         fontSize = 27.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
@@ -648,72 +611,23 @@ fun RemindersScreen(
 
                 Text(
                     text = workspace.name,
-                    fontSize = 14.sp,
                     color = TextSecondary
                 )
 
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(24.dp))
             }
 
-            // ==================================
-            // INFORMACIÓN
-            // ==================================
-
-            item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = SurfaceDark
-                    )
-                ) {
-
-                    Column(
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-
-                        Text(
-                            text = "Controla tus pasajes",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-
-                        Spacer(Modifier.height(8.dp))
-
-                        Text(
-                            text = "Configura horarios según tus turnos de trabajo. GASTIFY te recordará confirmar si pagaste tu pasaje.",
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            color = TextSecondary
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            text = "Los horarios se guardan en este dispositivo.",
-                            fontSize = 12.sp,
-                            color = PrimaryGreen
-                        )
-                    }
-                }
-            }
-
-            // ==================================
             // PERMISO DE NOTIFICACIONES
-            // ==================================
 
             if (!notificationsAllowed) {
 
                 item {
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = CardDark
-                        )
+                            containerColor = SurfaceDark
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
 
                         Column(
@@ -722,29 +636,28 @@ fun RemindersScreen(
 
                             Text(
                                 text = "Notificaciones desactivadas",
-                                fontWeight = FontWeight.SemiBold,
-                                color = ExpenseRed
+                                color = ExpenseRed,
+                                fontWeight = FontWeight.Bold
                             )
 
                             Spacer(Modifier.height(8.dp))
 
                             Text(
-                                text = "Activa las notificaciones para recibir recordatorios de tus pasajes.",
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
-                                color = TextSecondary
+                                text = "Debes permitirlas para recibir los avisos.",
+                                color = TextSecondary,
+                                fontSize = 13.sp
                             )
 
                             Spacer(Modifier.height(10.dp))
 
                             TextButton(
                                 onClick = {
-                                    requestNotificationPermission()
+                                    requestNotifications()
                                 }
                             ) {
 
                                 Text(
-                                    text = "Permitir notificaciones",
+                                    text = "Activar notificaciones",
                                     color = PrimaryGreen
                                 )
                             }
@@ -753,38 +666,119 @@ fun RemindersScreen(
                 }
             }
 
-            // ==================================
-            // CREAR RECORDATORIO
-            // ==================================
+            // PERMISO DE ALARMAS EXACTAS
+
+            if (!exactAllowed) {
+
+                item {
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = SurfaceDark
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+
+                        Column(
+                            modifier = Modifier.padding(18.dp)
+                        ) {
+
+                            Text(
+                                text = "Activar alarmas precisas",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Text(
+                                text = "Android puede retrasar tus avisos si no permites programarlos a una hora precisa.",
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                                color = TextSecondary
+                            )
+
+                            Spacer(Modifier.height(10.dp))
+
+                            TextButton(
+                                onClick = {
+                                    requestExactAlarms()
+                                }
+                            ) {
+
+                                Text(
+                                    text = "Conceder permiso",
+                                    color = PrimaryGreen
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             item {
 
-                Spacer(Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = CardDark
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+
+                        Text(
+                            text = "Recordatorios inteligentes",
+                            fontWeight = FontWeight.SemiBold,
+                            color = PrimaryGreen
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Text(
+                            text = "Cuando aparezca el aviso podrás confirmar el pago o aplazarlo 10 minutos. Aplazarlo no descontará dinero.",
+                            color = TextSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Text(
+                            text = "En HyperOS, permite también el inicio automático y la actividad en segundo plano de GASTIFY.",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            item {
+
+                Spacer(Modifier.height(12.dp))
 
                 Button(
                     onClick = {
                         openEditor(null)
                     },
-
                     enabled = !accountState.isLoading &&
                         !categoryState.isLoading,
-
                     modifier = Modifier.fillMaxWidth(),
-
                     shape = RoundedCornerShape(16.dp),
-
                     colors = ButtonDefaults.buttonColors(
                         containerColor = PrimaryGreen,
                         contentColor = AmoledBlack
                     ),
-
                     contentPadding = PaddingValues(16.dp)
                 ) {
 
                     Icon(
                         imageVector = GastifyIcons.add,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = null
                     )
 
                     Spacer(Modifier.width(8.dp))
@@ -795,62 +789,16 @@ fun RemindersScreen(
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
-
-                // COMPROBAR CUENTAS
-
-                if (accountState.accounts.isEmpty()) {
-
-                    Text(
-                        text = "Primero crea una cuenta en este espacio.",
-                        fontSize = 12.sp,
-                        color = ExpenseRed
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                // COMPROBAR CATEGORÍAS
-
-                if (expenseCategories.isEmpty()) {
-
-                    Text(
-                        text = "Primero crea una categoría de tipo Gasto.",
-                        fontSize = 12.sp,
-                        color = ExpenseRed
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                }
-
                 Spacer(Modifier.height(18.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Text(
+                    text = "Mis recordatorios (${reminders.size})",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
 
-                    Text(
-                        text = "Mis recordatorios",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
-                    )
-
-                    Text(
-                        text = "${reminders.size}",
-                        fontSize = 16.sp,
-                        color = PrimaryGreen
-                    )
-                }
-
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
             }
-
-            // ==================================
-            // SIN RECORDATORIOS
-            // ==================================
 
             if (reminders.isEmpty()) {
 
@@ -858,87 +806,48 @@ fun RemindersScreen(
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = SurfaceDark
                         )
                     ) {
 
-                        Column(
+                        Text(
+                            text = "Todavía no tienes recordatorios.",
+                            color = TextSecondary,
                             modifier = Modifier.padding(24.dp)
-                        ) {
-
-                            Icon(
-                                imageVector = Icons.Outlined.NotificationsActive,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(32.dp)
-                            )
-
-                            Spacer(Modifier.height(14.dp))
-
-                            Text(
-                                text = "Sin recordatorios",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Text(
-                                text = "Crea tu primer recordatorio para controlar tus pasajes.",
-                                fontSize = 13.sp,
-                                color = TextSecondary,
-                                lineHeight = 20.sp
-                            )
-                        }
+                        )
                     }
                 }
 
             } else {
-
-                // ==================================
-                // LISTADO DE RECORDATORIOS
-                // ==================================
 
                 items(
                     items = reminders,
                     key = { it.id }
                 ) { reminder ->
 
-                    val accountName = accountState.accounts
-                        .firstOrNull {
+                    val accountName =
+                        accountState.accounts.firstOrNull {
                             it.id == reminder.accountId
-                        }
-                        ?.name
-                        ?: "Cuenta no disponible"
+                        }?.name ?: "Cuenta no disponible"
 
-                    val categoryName = categoryState.categories
-                        .firstOrNull {
+                    val categoryName =
+                        categoryState.categories.firstOrNull {
                             it.id == reminder.categoryId
-                        }
-                        ?.name
-                        ?: "Categoría no disponible"
+                        }?.name ?: "Categoría no disponible"
 
                     ReminderCard(
                         reminder = reminder,
                         accountName = accountName,
                         categoryName = categoryName,
-
                         onEdit = {
                             openEditor(reminder)
                         },
-
                         onDelete = {
-                            reminderToDeleteId = reminder.id
+                            deleteId = reminder.id
                         },
-
-                        onEnabledChange = { enabled ->
-
-                            changeReminderStatus(
-                                reminder,
-                                enabled
-                            )
+                        onEnabledChange = {
+                            changeStatus(reminder, it)
                         }
                     )
                 }
@@ -953,61 +862,50 @@ fun RemindersScreen(
         )
     }
 
-    // ==========================================
-    // FORMULARIO CREAR / EDITAR
-    // ==========================================
+    // ======================================
+    // CREAR / EDITAR
+    // ======================================
 
     if (showEditor) {
 
-        val amountCents = parseReminderMoney(
-            amountText
-        )
+        val amount = parseReminderMoney(amountText)
 
-        val selectedAccount = accountState.accounts
-            .firstOrNull {
-                it.id == selectedAccountId
-            }
+        val account = accountState.accounts.firstOrNull {
+            it.id == accountId
+        }
 
-        val selectedCategory = expenseCategories
-            .firstOrNull {
-                it.id == selectedCategoryId
-            }
+        val category = expenseCategories.firstOrNull {
+            it.id == categoryId
+        }
 
         val selectedDays = (1..7)
-            .filter { day ->
-
-                selectedDaysMask and
-                    (1 shl (day - 1)) != 0
-
+            .filter {
+                daysMask and (1 shl (it - 1)) != 0
             }
             .toSet()
 
-        val canSave =
-            reminderTitle.trim().isNotEmpty() &&
-                amountCents != null &&
-                selectedAccount != null &&
-                selectedCategory != null &&
+        val valid =
+            title.trim().isNotEmpty() &&
+                amount != null &&
+                account != null &&
+                category != null &&
                 selectedDays.isNotEmpty()
 
         AlertDialog(
             onDismissRequest = {
                 showEditor = false
             },
-
             containerColor = SurfaceDark,
-
             title = {
 
                 Text(
-                    text = if (editingId == null) {
+                    if (editingId == null) {
                         "Nuevo recordatorio"
                     } else {
                         "Editar recordatorio"
-                    },
-                    color = TextPrimary
+                    }
                 )
             },
-
             text = {
 
                 Column(
@@ -1018,309 +916,199 @@ fun RemindersScreen(
                         )
                 ) {
 
-                    // NOMBRE
-
                     OutlinedTextField(
-                        value = reminderTitle,
-
+                        value = title,
                         onValueChange = {
-                            reminderTitle = it.take(60)
+                            title = it.take(60)
                         },
-
                         label = {
                             Text("Nombre")
                         },
-
                         placeholder = {
-                            Text("Ejemplo: Pasaje de ida")
+                            Text("Pasaje de ida")
                         },
-
                         singleLine = true,
-
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(Modifier.height(18.dp))
-
-                    // CUENTA
+                    Spacer(Modifier.height(16.dp))
 
                     Text(
                         text = "Cuenta",
                         fontWeight = FontWeight.Medium
                     )
 
-                    Spacer(Modifier.height(8.dp))
-
                     ReminderDropdown(
-                        selectedText = selectedAccount?.name
+                        selectedText = account?.name
                             ?: "Seleccionar cuenta",
-
                         options = accountState.accounts.map {
                             it.id to it.name
                         },
-
                         onSelect = {
-                            selectedAccountId = it
+                            accountId = it
                         }
                     )
 
-                    Spacer(Modifier.height(18.dp))
-
-                    // CATEGORÍA
+                    Spacer(Modifier.height(16.dp))
 
                     Text(
-                        text = "Categoría del gasto",
+                        text = "Categoría de gasto",
                         fontWeight = FontWeight.Medium
                     )
 
-                    Spacer(Modifier.height(8.dp))
-
                     ReminderDropdown(
-                        selectedText = selectedCategory?.name
+                        selectedText = category?.name
                             ?: "Seleccionar categoría",
-
                         options = expenseCategories.map {
                             it.id to it.name
                         },
-
                         onSelect = {
-                            selectedCategoryId = it
+                            categoryId = it
                         }
                     )
 
-                    Spacer(Modifier.height(18.dp))
-
-                    // IMPORTE
+                    Spacer(Modifier.height(16.dp))
 
                     OutlinedTextField(
                         value = amountText,
-
                         onValueChange = {
                             amountText = it.take(16)
                         },
-
                         label = {
                             Text("Precio del pasaje (S/)")
                         },
-
-                        placeholder = {
-                            Text("2.80")
-                        },
-
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Decimal
                         ),
-
                         singleLine = true,
-
                         isError = amountText.isNotBlank() &&
-                            amountCents == null,
-
+                            amount == null,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(Modifier.height(22.dp))
-
-                    // HORARIO
+                    Spacer(Modifier.height(20.dp))
 
                     Text(
                         text = "Horario",
                         fontWeight = FontWeight.Medium
                     )
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     OutlinedButton(
                         onClick = {
 
                             TimePickerDialog(
                                 context,
+                                { _, h, m ->
 
-                                { _, hour, minute ->
-
-                                    selectedHour = hour
-                                    selectedMinute = minute
+                                    hour = h
+                                    minute = m
                                 },
-
-                                selectedHour,
-                                selectedMinute,
+                                hour,
+                                minute,
                                 true
                             ).show()
                         },
-
-                        modifier = Modifier.fillMaxWidth(),
-
-                        shape = RoundedCornerShape(14.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
 
                         Text(
-                            text = formatReminderTime(
-                                selectedHour,
-                                selectedMinute
-                            ),
-
+                            text = reminderTime(hour, minute),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryGreen
                         )
                     }
 
-                    Spacer(Modifier.height(22.dp))
-
-                    // DÍAS
+                    Spacer(Modifier.height(20.dp))
 
                     Text(
                         text = "Días de la semana",
                         fontWeight = FontWeight.Medium
                     )
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    // PRIMERA FILA
+                    Column {
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                        reminderDays.chunked(4).forEach { row ->
 
-                        reminderDays.take(4).forEach { (day, label) ->
+                            Row(
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(6.dp)
+                            ) {
 
-                            val bit = 1 shl (day - 1)
+                                row.forEach { (day, label) ->
 
-                            val selected =
-                                selectedDaysMask and bit != 0
+                                    val bit =
+                                        1 shl (day - 1)
 
-                            FilterChip(
-                                selected = selected,
-
-                                onClick = {
-
-                                    selectedDaysMask =
-                                        selectedDaysMask xor bit
-                                },
-
-                                label = {
-                                    Text(label)
+                                    FilterChip(
+                                        selected =
+                                            daysMask and bit != 0,
+                                        onClick = {
+                                            daysMask =
+                                                daysMask xor bit
+                                        },
+                                        label = {
+                                            Text(label)
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
 
-                    // SEGUNDA FILA
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-
-                        reminderDays.drop(4).forEach { (day, label) ->
-
-                            val bit = 1 shl (day - 1)
-
-                            val selected =
-                                selectedDaysMask and bit != 0
-
-                            FilterChip(
-                                selected = selected,
-
-                                onClick = {
-
-                                    selectedDaysMask =
-                                        selectedDaysMask xor bit
-                                },
-
-                                label = {
-                                    Text(label)
-                                }
-                            )
-                        }
-                    }
-
-                    if (selectedDays.isEmpty()) {
-
-                        Spacer(Modifier.height(6.dp))
-
-                        Text(
-                            text = "Selecciona al menos un día.",
-                            color = ExpenseRed,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(Modifier.height(18.dp))
-
-                    // ACTIVAR RECORDATORIO
+                    Spacer(Modifier.height(16.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
                     ) {
 
-                        Text(
-                            text = "Recordatorio activo",
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("Recordatorio activo")
 
                         Switch(
-                            checked = reminderEnabled,
-
+                            checked = enabled,
                             onCheckedChange = {
-                                reminderEnabled = it
+                                enabled = it
                             }
                         )
                     }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Text(
-                        text = "El aviso se repetirá en los días seleccionados.",
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = TextSecondary
-                    )
                 }
             },
-
             confirmButton = {
 
                 TextButton(
-                    enabled = canSave,
-
+                    enabled = valid,
                     onClick = {
 
                         if (
-                            amountCents != null &&
-                            selectedAccount != null &&
-                            selectedCategory != null &&
-                            selectedDays.isNotEmpty()
+                            amount != null &&
+                            account != null &&
+                            category != null
                         ) {
 
-                            val reminder = PassageReminder(
-
-                                id = editingId
-                                    ?: UUID.randomUUID().toString(),
-
-                                userId = userId,
-
-                                workspaceId = workspace.id,
-
-                                accountId = selectedAccount.id,
-
-                                categoryId = selectedCategory.id,
-
-                                title = reminderTitle.trim(),
-
-                                amountCents = amountCents,
-
-                                hour = selectedHour,
-
-                                minute = selectedMinute,
-
-                                daysOfWeek = selectedDays,
-
-                                enabled = reminderEnabled
+                            saveReminder(
+                                PassageReminder(
+                                    id = editingId
+                                        ?: UUID.randomUUID()
+                                            .toString(),
+                                    userId = userId,
+                                    workspaceId = workspace.id,
+                                    accountId = account.id,
+                                    categoryId = category.id,
+                                    title = title.trim(),
+                                    amountCents = amount,
+                                    hour = hour,
+                                    minute = minute,
+                                    daysOfWeek = selectedDays,
+                                    enabled = enabled
+                                )
                             )
-
-                            saveReminder(reminder)
                         }
                     }
                 ) {
@@ -1331,7 +1119,6 @@ fun RemindersScreen(
                     )
                 }
             },
-
             dismissButton = {
 
                 TextButton(
@@ -1349,47 +1136,34 @@ fun RemindersScreen(
         )
     }
 
-    // ==========================================
-    // CONFIRMACIÓN DE ELIMINACIÓN
-    // ==========================================
+    // ======================================
+    // ELIMINAR
+    // ======================================
 
-    val reminderToDelete = reminders.firstOrNull {
-        it.id == reminderToDeleteId
+    val toDelete = reminders.firstOrNull {
+        it.id == deleteId
     }
 
-    if (reminderToDelete != null) {
+    if (toDelete != null) {
 
         AlertDialog(
             onDismissRequest = {
-                reminderToDeleteId = null
+                deleteId = null
             },
-
             containerColor = SurfaceDark,
-
             title = {
-
-                Text(
-                    text = "Eliminar recordatorio",
-                    color = TextPrimary
-                )
+                Text("Eliminar recordatorio")
             },
-
             text = {
-
                 Text(
-                    text = "¿Seguro que deseas eliminar \"${reminderToDelete.title}\"?",
-                    color = TextSecondary
+                    "¿Eliminar \"${toDelete.title}\"?"
                 )
             },
-
             confirmButton = {
 
                 TextButton(
                     onClick = {
-
-                        deleteReminder(
-                            reminderToDelete.id
-                        )
+                        deleteReminder(toDelete.id)
                     }
                 ) {
 
@@ -1399,28 +1173,20 @@ fun RemindersScreen(
                     )
                 }
             },
-
             dismissButton = {
 
                 TextButton(
                     onClick = {
-                        reminderToDeleteId = null
+                        deleteId = null
                     }
                 ) {
 
-                    Text(
-                        text = "Cancelar",
-                        color = TextSecondary
-                    )
+                    Text("Cancelar")
                 }
             }
         )
     }
 }
-
-// ==========================================
-// TARJETA DE RECORDATORIO
-// ==========================================
 
 @Composable
 private fun ReminderCard(
@@ -1434,9 +1200,7 @@ private fun ReminderCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-
         shape = RoundedCornerShape(20.dp),
-
         colors = CardDefaults.cardColors(
             containerColor = SurfaceDark
         )
@@ -1446,30 +1210,17 @@ private fun ReminderCard(
             modifier = Modifier.padding(20.dp)
         ) {
 
-            // ENCABEZADO
-
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
-                Surface(
-                    color = CardDark,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-
-                    Box(
-                        modifier = Modifier.size(50.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Outlined.NotificationsActive,
-                            contentDescription = null,
-                            tint = PrimaryGreen,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
+                Icon(
+                    imageVector =
+                        Icons.Outlined.NotificationsActive,
+                    contentDescription = null,
+                    tint = PrimaryGreen,
+                    modifier = Modifier.size(28.dp)
+                )
 
                 Spacer(Modifier.width(12.dp))
 
@@ -1481,170 +1232,97 @@ private fun ReminderCard(
                         text = reminder.title,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     Text(
-                        text = formatReminderTime(
+                        text = reminderTime(
                             reminder.hour,
                             reminder.minute
                         ),
-
+                        color = PrimaryGreen,
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryGreen
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 Switch(
                     checked = reminder.enabled,
-
                     onCheckedChange = onEnabledChange
                 )
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
-            HorizontalDivider(
-                color = BorderDark
-            )
+            HorizontalDivider(color = BorderDark)
 
             Spacer(Modifier.height(14.dp))
-
-            // IMPORTE
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-
-                Text(
-                    text = "Importe",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-
-                Text(
-                    text = formatReminderMoney(
-                        reminder.amountCents
-                    ),
-
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // CUENTA
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-
-                Text(
-                    text = "Cuenta",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-
-                Text(
-                    text = accountName,
-                    color = TextPrimary,
-                    fontSize = 13.sp
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // CATEGORÍA
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-
-                Text(
-                    text = "Categoría",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-
-                Text(
-                    text = categoryName,
-                    color = TextPrimary,
-                    fontSize = 13.sp
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // DÍAS
 
             Text(
-                text = formatReminderDays(
-                    reminder.daysOfWeek
+                text = reminderMoney(
+                    reminder.amountCents
                 ),
-
-                fontSize = 12.sp,
-                color = TextSecondary
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
             )
 
             Spacer(Modifier.height(10.dp))
 
-            // SIGUIENTE AVISO
-
             Text(
-                text = "Próximo aviso: ${
-                    formatNextReminder(reminder)
-                }",
-
-                fontSize = 12.sp,
-                color = PrimaryGreen
+                text = "Cuenta: $accountName",
+                color = TextSecondary,
+                fontSize = 13.sp
             )
 
-            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Categoría: $categoryName",
+                color = TextSecondary,
+                fontSize = 13.sp
+            )
 
-            HorizontalDivider(
-                color = BorderDark
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = reminderDaysText(
+                    reminder.daysOfWeek
+                ),
+                color = TextSecondary,
+                fontSize = 12.sp
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // ACCIONES
+            Text(
+                text = "Próximo aviso: ${
+                    reminderNext(reminder)
+                }",
+                color = PrimaryGreen,
+                fontSize = 12.sp
+            )
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Spacer(Modifier.height(12.dp))
 
-                TextButton(
-                    onClick = onEdit
-                ) {
+            HorizontalDivider(color = BorderDark)
+
+            Row {
+
+                TextButton(onClick = onEdit) {
 
                     Icon(
                         imageVector = GastifyIcons.edit,
                         contentDescription = null,
-                        tint = PrimaryGreen,
                         modifier = Modifier.size(18.dp)
                     )
 
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(5.dp))
 
-                    Text(
-                        text = "Editar",
-                        color = PrimaryGreen
-                    )
+                    Text("Editar")
                 }
 
-                TextButton(
-                    onClick = onDelete
-                ) {
+                TextButton(onClick = onDelete) {
 
                     Icon(
                         imageVector = GastifyIcons.delete,
@@ -1653,7 +1331,7 @@ private fun ReminderCard(
                         modifier = Modifier.size(18.dp)
                     )
 
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(5.dp))
 
                     Text(
                         text = "Eliminar",
@@ -1664,10 +1342,6 @@ private fun ReminderCard(
         }
     }
 }
-
-// ==========================================
-// SELECTOR DE CUENTA Y CATEGORÍA
-// ==========================================
 
 @Composable
 private fun ReminderDropdown(
@@ -1688,10 +1362,7 @@ private fun ReminderDropdown(
             onClick = {
                 expanded = true
             },
-
-            modifier = Modifier.fillMaxWidth(),
-
-            shape = RoundedCornerShape(12.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
 
             Text(
@@ -1706,18 +1377,15 @@ private fun ReminderDropdown(
 
             Icon(
                 imageVector = GastifyIcons.expand,
-                contentDescription = null,
-                tint = PrimaryGreen
+                contentDescription = null
             )
         }
 
         DropdownMenu(
             expanded = expanded,
-
             onDismissRequest = {
                 expanded = false
             },
-
             containerColor = SurfaceDark
         ) {
 
@@ -1725,13 +1393,11 @@ private fun ReminderDropdown(
 
                 DropdownMenuItem(
                     text = {
-
                         Text(
                             text = option.second,
                             color = TextPrimary
                         )
                     },
-
                     onClick = {
 
                         onSelect(option.first)
@@ -1745,13 +1411,8 @@ private fun ReminderDropdown(
 
                 DropdownMenuItem(
                     text = {
-
-                        Text(
-                            text = "No hay opciones disponibles.",
-                            color = TextSecondary
-                        )
+                        Text("Sin opciones disponibles")
                     },
-
                     onClick = {
                         expanded = false
                     }

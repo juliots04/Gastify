@@ -1,5 +1,6 @@
 package com.example.gastify.notifications
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,9 +22,22 @@ class ReminderBootReceiver : BroadcastReceiver() {
 
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
 
-                ReminderScheduler.scheduleAll(
-                    context
-                )
+                ReminderScheduler.scheduleAll(context)
+            }
+
+            AlarmManager
+                .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> {
+
+                if (
+                    ReminderScheduler.canScheduleExact(
+                        context
+                    )
+                ) {
+
+                    ReminderScheduler.scheduleAll(
+                        context
+                    )
+                }
             }
         }
     }

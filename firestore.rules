@@ -1,0 +1,1180 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+    // ====================================
+    // FUNCIONES GENERALES
+    // ====================================
+
+    function isOwner(userId) {
+      return request.auth != null &&
+        request.auth.uid == userId;
+    }
+
+    function workspacePath(userId, workspaceId) {
+      return /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId);
+    }
+
+    function accountPath(userId, workspaceId, accountId) {
+      return /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/accounts/$(accountId);
+    }
+
+    function categoryPath(userId, workspaceId, categoryId) {
+      return /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/categories/$(categoryId);
+    }
+
+    function movementPath(userId, workspaceId, movementId) {
+      return /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/movements/$(movementId);
+    }
+
+    function workspaceExists(userId, workspaceId) {
+      return exists(
+        workspacePath(userId, workspaceId)
+      );
+    }
+
+    // ====================================
+    // VALIDAR ESPACIOS
+    // ====================================
+
+    function validWorkspace(data) {
+
+      return data.keys().hasAll([
+          'name',
+          'createdAt'
+        ])
+
+        && data.keys().hasOnly([
+          'name',
+          'createdAt'
+        ])
+
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 60
+
+        && data.createdAt is timestamp;
+    }
+
+    // ====================================
+    // VALIDAR CATEGORÍAS
+    // ====================================
+
+    function validCategory(data) {
+
+      return data.keys().hasAll([
+          'name',
+          'type',
+          'icon',
+          'color',
+          'createdAt'
+        ])
+
+        && data.keys().hasOnly([
+          'name',
+          'type',
+          'icon',
+          'color',
+          'createdAt'
+        ])
+
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 60
+
+        && data.type in [
+          'INCOME',
+          'EXPENSE'
+        ]
+
+        && data.icon is string
+        && data.icon.size() > 0
+        && data.icon.size() <= 10
+
+        && data.color is string
+        && data.color.matches(
+          '^#[0-9A-Fa-f]{6}$'
+        )
+
+        && data.createdAt is timestamp;
+    }
+
+    // ====================================
+    // VALIDAR CUENTAS
+    // ====================================
+
+    function validAccount(data) {
+
+      return data.keys().hasAll([
+          'name',
+          'type',
+          'openingBalanceCents',
+          'balanceCents',
+          'createdAt'
+        ])
+
+        && data.keys().hasOnly([
+          'name',
+          'type',
+          'openingBalanceCents',
+          'balanceCents',
+          'createdAt',
+          'lastMovementId'
+        ])
+
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 60
+
+        && data.type in [
+          'CASH',
+          'BANK',
+          'WALLET',
+          'TRANSPORT',
+          'OTHER'
+        ]
+
+        && data.openingBalanceCents is int
+
+        && data.openingBalanceCents >= 0
+
+        && data.openingBalanceCents <= 999999999999
+
+        && data.balanceCents is int
+
+        && data.balanceCents >= 0
+
+        && data.balanceCents <= 999999999999
+
+        && data.get('lastMovementId', '') is string
+
+        && data.get('lastMovementId', '').size() <= 128
+
+        && data.createdAt is timestamp;
+    }
+
+    // ====================================
+    // VALIDAR MOVIMIENTOS FINANCIEROS
+    // ====================================
+
+    function validMovement(data) {
+
+      return data.keys().hasAll([
+          'accountId',
+          'categoryId',
+          'type',
+          'amountCents',
+          'note',
+          'previousBalanceCents',
+          'balanceAfterCents',
+          'createdAt'
+        ])
+
+        && data.keys().hasOnly([
+          'accountId',
+          'categoryId',
+          'type',
+          'amountCents',
+          'note',
+          'previousBalanceCents',
+          'balanceAfterCents',
+          'createdAt'
+        ])
+
+        && data.accountId is string
+        && data.accountId.size() > 0
+
+        && data.categoryId is string
+        && data.categoryId.size() > 0
+
+        && data.type in [
+          'INCOME',
+          'EXPENSE'
+        ]
+
+        && data.amountCents is int
+
+        && data.amountCents > 0
+
+        && data.amountCents <= 999999999999
+
+        && data.note is string
+
+        && data.note.size() <= 200
+
+        && data.previousBalanceCents is int
+
+        && data.previousBalanceCents >= 0
+
+        && data.previousBalanceCents <= 999999999999
+
+        && data.balanceAfterCents is int
+
+        && data.balanceAfterCents >= 0
+
+        && data.balanceAfterCents <= 999999999999
+
+        && data.balanceAfterCents ==
+           data.previousBalanceCents +
+           (
+             data.type == 'INCOME'
+             ? data.amountCents
+             : -data.amountCents
+           )
+
+        && data.createdAt is timestamp;
+    }
+
+    // ====================================
+    // VALIDAR MOVIMIENTO VINCULADO
+    // ====================================
+
+    function matchingNewMovement(
+      userId,
+      workspaceId,
+      accountId,
+      movementId,
+      oldBalance,
+      newBalance
+    ) {
+
+      let path = movementPath(
+        userId,
+        workspaceId,
+        movementId
+      );
+
+      return !exists(path)
+
+        && existsAfter(path)
+
+        && getAfter(path).data.accountId == accountId
+
+        && validMovement(getAfter(path).data)
+
+        && getAfter(path).data.previousBalanceCents ==
+           oldBalance
+
+        && getAfter(path).data.balanceAfterCents ==
+           newBalance
+
+        && getAfter(path).data.createdAt ==
+           request.time;
+    }
+
+    // ====================================
+    // ESPACIOS
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId} {
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && validWorkspace(request.resource.data)
+
+        && request.resource.data.createdAt ==
+           request.time;
+
+      allow update: if false;
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ====================================
+    // CATEGORÍAS
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/categories/{categoryId} {
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validCategory(request.resource.data)
+
+        && request.resource.data.createdAt ==
+           request.time;
+
+      allow update: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validCategory(request.resource.data)
+
+        && request.resource.data.createdAt ==
+           resource.data.createdAt;
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ====================================
+    // CUENTAS
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/accounts/{accountId} {
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validAccount(request.resource.data)
+
+        && !request.resource.data.keys().hasAny([
+          'lastMovementId'
+        ])
+
+        && request.resource.data.balanceCents ==
+           request.resource.data.openingBalanceCents
+
+        && request.resource.data.createdAt ==
+           request.time;
+
+      allow update: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validAccount(request.resource.data)
+
+        && (
+
+          request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly(['name'])
+
+          ||
+
+          (
+            request.resource.data.diff(resource.data)
+              .affectedKeys().hasOnly([
+                'balanceCents',
+                'lastMovementId'
+              ])
+
+            && request.resource.data.diff(resource.data)
+              .affectedKeys().hasAll([
+                'balanceCents',
+                'lastMovementId'
+              ])
+
+            && matchingNewMovement(
+              userId,
+              workspaceId,
+              accountId,
+              request.resource.data.lastMovementId,
+              resource.data.balanceCents,
+              request.resource.data.balanceCents
+            )
+          )
+        );
+
+      allow delete: if isOwner(userId)
+
+        && !resource.data.keys().hasAny([
+          'lastMovementId'
+        ])
+
+        && resource.data.balanceCents ==
+           resource.data.openingBalanceCents;
+    }
+
+    // ====================================
+    // MOVIMIENTOS FINANCIEROS
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/movements/{movementId} {
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validMovement(request.resource.data)
+
+        && request.resource.data.createdAt ==
+           request.time
+
+        && exists(
+          accountPath(
+            userId,
+            workspaceId,
+            request.resource.data.accountId
+          )
+        )
+
+        && exists(
+          categoryPath(
+            userId,
+            workspaceId,
+            request.resource.data.categoryId
+          )
+        )
+
+        && get(
+          categoryPath(
+            userId,
+            workspaceId,
+            request.resource.data.categoryId
+          )
+        ).data.type == request.resource.data.type
+
+        && get(
+          accountPath(
+            userId,
+            workspaceId,
+            request.resource.data.accountId
+          )
+        ).data.balanceCents ==
+           request.resource.data.previousBalanceCents
+
+        && getAfter(
+          accountPath(
+            userId,
+            workspaceId,
+            request.resource.data.accountId
+          )
+        ).data.balanceCents ==
+           request.resource.data.balanceAfterCents
+
+        && getAfter(
+          accountPath(
+            userId,
+            workspaceId,
+            request.resource.data.accountId
+          )
+        ).data.lastMovementId == movementId;
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    // ====================================
+    // PRESUPUESTOS - FASE 13
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/budgets/{budgetId} {
+
+      function validBudget(data) {
+
+        return data.keys().hasAll([
+            'period',
+            'categoryId',
+            'limitCents',
+            'updatedAt'
+          ])
+
+          && data.keys().hasOnly([
+            'period',
+            'categoryId',
+            'limitCents',
+            'updatedAt'
+          ])
+
+          && data.period in [
+            'DAILY',
+            'WEEKLY',
+            'MONTHLY'
+          ]
+
+          && data.categoryId is string
+
+          && data.categoryId.size() <= 128
+
+          && data.limitCents is int
+
+          && data.limitCents > 0
+
+          && data.limitCents <= 999999999999
+
+          && data.updatedAt is timestamp;
+      }
+
+      allow read: if isOwner(userId);
+
+      allow create, update: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validBudget(request.resource.data)
+
+        && request.resource.data.updatedAt ==
+           request.time;
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ====================================
+    // PRODUCTOS - FASE 14
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/products/{productId} {
+
+      function validProduct(data) {
+
+        return data.keys().hasAll([
+            'name',
+            'sku',
+            'description',
+            'quantity',
+            'minQuantity',
+            'costCents',
+            'priceCents',
+            'createdAt',
+            'updatedAt'
+          ])
+
+          && data.keys().hasOnly([
+            'name',
+            'sku',
+            'description',
+            'quantity',
+            'minQuantity',
+            'costCents',
+            'priceCents',
+            'createdAt',
+            'updatedAt',
+            'lastStockMovementId'
+          ])
+
+          && data.name is string
+
+          && data.name.size() > 0
+
+          && data.name.size() <= 80
+
+          && data.sku is string
+
+          && data.sku.size() <= 40
+
+          && data.description is string
+
+          && data.description.size() <= 200
+
+          && data.quantity is int
+
+          && data.quantity >= 0
+
+          && data.quantity <= 1000000
+
+          && data.minQuantity is int
+
+          && data.minQuantity >= 0
+
+          && data.minQuantity <= 1000000
+
+          && data.costCents is int
+
+          && data.costCents >= 0
+
+          && data.costCents <= 999999999999
+
+          && data.priceCents is int
+
+          && data.priceCents >= 0
+
+          && data.priceCents <= 999999999999
+
+          && data.createdAt is timestamp
+
+          && data.updatedAt is timestamp
+
+          && data.get('lastStockMovementId', '') is string
+
+          && data.get('lastStockMovementId', '').size() <= 120;
+      }
+
+      function metadataOnly() {
+
+        return request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'name',
+            'sku',
+            'description',
+            'minQuantity',
+            'costCents',
+            'priceCents',
+            'updatedAt'
+          ]);
+      }
+
+      function stockMovementLinked() {
+
+        let movementId = request.resource.data.get(
+          'lastStockMovementId',
+          ''
+        );
+
+        let path =
+          /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/stockMovements/$(movementId);
+
+        return movementId is string
+
+          && movementId.size() > 0
+
+          && movementId.size() <= 120
+
+          && request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly([
+              'quantity',
+              'lastStockMovementId',
+              'updatedAt'
+            ])
+
+          && request.resource.data.diff(resource.data)
+            .affectedKeys().hasAll([
+              'quantity',
+              'lastStockMovementId'
+            ])
+
+          && !exists(path)
+
+          && existsAfter(path)
+
+          && getAfter(path).data.productId ==
+             productId
+
+          && getAfter(path).data.previousQuantity ==
+             resource.data.quantity
+
+          && getAfter(path).data.resultingQuantity ==
+             request.resource.data.quantity
+
+          && getAfter(path).data.quantityDelta ==
+             request.resource.data.quantity -
+             resource.data.quantity
+
+          && getAfter(path).data.createdAt ==
+             request.time;
+      }
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validProduct(request.resource.data)
+
+        && !request.resource.data.keys().hasAny([
+          'lastStockMovementId'
+        ])
+
+        && request.resource.data.createdAt ==
+           request.time
+
+        && request.resource.data.updatedAt ==
+           request.time;
+
+      allow update: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validProduct(request.resource.data)
+
+        && request.resource.data.createdAt ==
+           resource.data.createdAt
+
+        && request.resource.data.updatedAt ==
+           request.time
+
+        && (
+          metadataOnly() ||
+          stockMovementLinked()
+        );
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ====================================
+    // MOVIMIENTOS DE STOCK - FASE 14
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/stockMovements/{movementId} {
+
+      function validStockMovement(data) {
+
+        return data.keys().hasAll([
+            'productId',
+            'productName',
+            'type',
+            'quantityDelta',
+            'previousQuantity',
+            'resultingQuantity',
+            'note',
+            'createdAt'
+          ])
+
+          && data.keys().hasOnly([
+            'productId',
+            'productName',
+            'type',
+            'quantityDelta',
+            'previousQuantity',
+            'resultingQuantity',
+            'note',
+            'createdAt'
+          ])
+
+          && data.productId is string
+
+          && data.productId.size() > 0
+
+          && data.productName is string
+
+          && data.productName.size() > 0
+
+          && data.productName.size() <= 80
+
+          && data.type in [
+            'ENTRY',
+            'EXIT',
+            'ADJUSTMENT'
+          ]
+
+          && data.quantityDelta is int
+
+          && data.quantityDelta != 0
+
+          && data.quantityDelta >= -1000000
+
+          && data.quantityDelta <= 1000000
+
+          && data.previousQuantity is int
+
+          && data.previousQuantity >= 0
+
+          && data.previousQuantity <= 1000000
+
+          && data.resultingQuantity is int
+
+          && data.resultingQuantity >= 0
+
+          && data.resultingQuantity <= 1000000
+
+          && data.resultingQuantity ==
+             data.previousQuantity +
+             data.quantityDelta
+
+          && (
+
+            (
+              data.type == 'ENTRY' &&
+              data.quantityDelta > 0
+            )
+
+            ||
+
+            (
+              data.type == 'EXIT' &&
+              data.quantityDelta < 0
+            )
+
+            ||
+
+            data.type == 'ADJUSTMENT'
+          )
+
+          && data.note is string
+
+          && data.note.size() <= 200
+
+          && data.createdAt is timestamp
+
+          && data.createdAt == request.time;
+      }
+
+      function matchingProductUpdate() {
+
+        let path =
+          /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/products/$(request.resource.data.productId);
+
+        return exists(path)
+
+          && get(path).data.quantity ==
+             request.resource.data.previousQuantity
+
+          && get(path).data.name ==
+             request.resource.data.productName
+
+          && getAfter(path).data.quantity ==
+             request.resource.data.resultingQuantity
+
+          && getAfter(path).data.lastStockMovementId ==
+             movementId
+
+          && getAfter(path).data.updatedAt ==
+             request.time;
+      }
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validStockMovement(request.resource.data)
+
+        && matchingProductUpdate();
+
+      allow update, delete: if false;
+    }
+
+    // ====================================
+    // COMPRAS Y VENTAS - FASES 15 Y 16
+    // ====================================
+
+    match /users/{userId}/workspaces/{workspaceId}/commerceOperations/{operationId} {
+
+      // ==================================
+      // VALIDAR COMPROBANTE
+      // ==================================
+
+      function validCommerce(data) {
+
+        return data.keys().hasAll([
+            'type',
+            'productId',
+            'productName',
+            'productSku',
+            'accountId',
+            'categoryId',
+            'quantity',
+            'unitPriceCents',
+            'totalCents',
+            'previousQuantity',
+            'resultingQuantity',
+            'previousBalanceCents',
+            'balanceAfterCents',
+            'note',
+            'historicalUnitCostCents',
+            'historicalTotalCostCents',
+            'createdAt'
+          ])
+
+          && data.keys().hasOnly([
+            'type',
+            'productId',
+            'productName',
+            'productSku',
+            'accountId',
+            'categoryId',
+            'quantity',
+            'unitPriceCents',
+            'totalCents',
+            'previousQuantity',
+            'resultingQuantity',
+            'previousBalanceCents',
+            'balanceAfterCents',
+            'note',
+            'historicalUnitCostCents',
+            'historicalTotalCostCents',
+            'createdAt'
+          ])
+
+          && data.type in [
+            'PURCHASE',
+            'SALE'
+          ]
+
+          && data.productId is string
+
+          && data.productId.size() > 0
+
+          && data.productName is string
+
+          && data.productName.size() > 0
+
+          && data.productName.size() <= 80
+
+          && data.productSku is string
+
+          && data.productSku.size() <= 40
+
+          && data.accountId is string
+
+          && data.accountId.size() > 0
+
+          && data.categoryId is string
+
+          && data.categoryId.size() > 0
+
+          && data.quantity is int
+
+          && data.quantity >= 1
+
+          && data.quantity <= 1000000
+
+          && data.unitPriceCents is int
+
+          && data.unitPriceCents >= 1
+
+          && data.unitPriceCents <= 999999999999
+
+          && data.totalCents is int
+
+          && data.totalCents >= 1
+
+          && data.totalCents <= 999999999999
+
+          && data.totalCents ==
+             data.quantity * data.unitPriceCents
+
+          // COSTOS HISTÓRICOS
+
+          && data.historicalUnitCostCents is int
+
+          && data.historicalUnitCostCents >= 0
+
+          && data.historicalUnitCostCents <= 999999999999
+
+          && data.historicalTotalCostCents is int
+
+          && data.historicalTotalCostCents >= 0
+
+          && data.historicalTotalCostCents <=
+             999999999999000000
+
+          && data.historicalTotalCostCents ==
+             data.quantity *
+             data.historicalUnitCostCents
+
+          // INVENTARIO
+
+          && data.previousQuantity is int
+
+          && data.previousQuantity >= 0
+
+          && data.previousQuantity <= 1000000
+
+          && data.resultingQuantity is int
+
+          && data.resultingQuantity >= 0
+
+          && data.resultingQuantity <= 1000000
+
+          && data.resultingQuantity ==
+             data.previousQuantity +
+             (
+               data.type == 'PURCHASE'
+               ? data.quantity
+               : -data.quantity
+             )
+
+          // SALDO FINANCIERO
+
+          && data.previousBalanceCents is int
+
+          && data.previousBalanceCents >= 0
+
+          && data.previousBalanceCents <= 999999999999
+
+          && data.balanceAfterCents is int
+
+          && data.balanceAfterCents >= 0
+
+          && data.balanceAfterCents <= 999999999999
+
+          && data.balanceAfterCents ==
+             data.previousBalanceCents +
+             (
+               data.type == 'SALE'
+               ? data.totalCents
+               : -data.totalCents
+             )
+
+          && data.note is string
+
+          && data.note.size() <= 200
+
+          && data.createdAt == request.time;
+      }
+
+      // ==================================
+      // VALIDAR TRANSACCIÓN COMPLETA
+      // ==================================
+
+      function matchesCommerceTransaction(data) {
+
+        let product =
+          /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/products/$(data.productId);
+
+        let account =
+          accountPath(
+            userId,
+            workspaceId,
+            data.accountId
+          );
+
+        let category =
+          categoryPath(
+            userId,
+            workspaceId,
+            data.categoryId
+          );
+
+        let stock =
+          /databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/stockMovements/$(operationId);
+
+        let financial =
+          movementPath(
+            userId,
+            workspaceId,
+            operationId
+          );
+
+        return exists(product)
+
+          && exists(account)
+
+          && exists(category)
+
+          && !exists(stock)
+
+          && !exists(financial)
+
+          && existsAfter(stock)
+
+          && existsAfter(financial)
+
+          // PRODUCTO
+
+          && get(product).data.name ==
+             data.productName
+
+          && get(product).data.sku ==
+             data.productSku
+
+          && get(product).data.quantity ==
+             data.previousQuantity
+
+          && getAfter(product).data.quantity ==
+             data.resultingQuantity
+
+          && getAfter(product).data.lastStockMovementId ==
+             operationId
+
+          // COSTO HISTÓRICO DEBE COINCIDIR
+          // CON EL COSTO ANTES DE LA VENTA.
+
+          && get(product).data.costCents ==
+             data.historicalUnitCostCents
+
+          // EN COMPRAS, EL PRECIO UNITARIO
+          // COINCIDE CON EL COSTO CONFIGURADO.
+
+          && (
+            data.type == 'SALE' ||
+            get(product).data.costCents ==
+              data.unitPriceCents
+          )
+
+          // CUENTA
+
+          && get(account).data.balanceCents ==
+             data.previousBalanceCents
+
+          && getAfter(account).data.balanceCents ==
+             data.balanceAfterCents
+
+          && getAfter(account).data.lastMovementId ==
+             operationId
+
+          // CATEGORÍA
+
+          && get(category).data.type ==
+             (
+               data.type == 'SALE'
+               ? 'INCOME'
+               : 'EXPENSE'
+             )
+
+          // MOVIMIENTO FINANCIERO
+
+          && getAfter(financial).data.accountId ==
+             data.accountId
+
+          && getAfter(financial).data.categoryId ==
+             data.categoryId
+
+          && getAfter(financial).data.type ==
+             (
+               data.type == 'SALE'
+               ? 'INCOME'
+               : 'EXPENSE'
+             )
+
+          && getAfter(financial).data.amountCents ==
+             data.totalCents
+
+          && getAfter(financial).data.previousBalanceCents ==
+             data.previousBalanceCents
+
+          && getAfter(financial).data.balanceAfterCents ==
+             data.balanceAfterCents
+
+          && getAfter(financial).data.createdAt ==
+             request.time
+
+          // MOVIMIENTO DE STOCK
+
+          && getAfter(stock).data.productId ==
+             data.productId
+
+          && getAfter(stock).data.productName ==
+             data.productName
+
+          && getAfter(stock).data.type ==
+             (
+               data.type == 'SALE'
+               ? 'EXIT'
+               : 'ENTRY'
+             )
+
+          && getAfter(stock).data.quantityDelta ==
+             (
+               data.type == 'PURCHASE'
+               ? data.quantity
+               : -data.quantity
+             )
+
+          && getAfter(stock).data.previousQuantity ==
+             data.previousQuantity
+
+          && getAfter(stock).data.resultingQuantity ==
+             data.resultingQuantity
+
+          && getAfter(stock).data.note ==
+             data.note
+
+          && getAfter(stock).data.createdAt ==
+             request.time;
+      }
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+
+        && workspaceExists(userId, workspaceId)
+
+        && validCommerce(request.resource.data)
+
+        && matchesCommerceTransaction(
+          request.resource.data
+        );
+
+      // LOS COMPROBANTES NO SE PUEDEN
+      // EDITAR NI ELIMINAR.
+
+      allow update, delete: if false;
+    }
+
+  }
+}

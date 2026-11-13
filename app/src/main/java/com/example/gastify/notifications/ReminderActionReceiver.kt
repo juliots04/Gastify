@@ -13,7 +13,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
-import com.google.firebase.auth.FirebaseAuth
+import com.example.gastify.data.local.ReminderStore
 
 import java.util.concurrent.TimeUnit
 
@@ -24,17 +24,14 @@ class ReminderActionReceiver : BroadcastReceiver() {
         const val ACTION_PAID =
             "com.example.gastify.REMINDER_PAID"
 
-        const val ACTION_NOT_PAID =
-            "com.example.gastify.REMINDER_NOT_PAID"
+        const val ACTION_LATER =
+            "com.example.gastify.REMINDER_LATER"
 
         const val EXTRA_USER_ID = "userId"
-        const val EXTRA_WORKSPACE_ID = "workspaceId"
-        const val EXTRA_ACCOUNT_ID = "accountId"
-        const val EXTRA_CATEGORY_ID = "categoryId"
+
         const val EXTRA_REMINDER_ID = "reminderId"
+
         const val EXTRA_TRIGGER_TIME = "triggerTime"
-        const val EXTRA_AMOUNT_CENTS = "amountCents"
-        const val EXTRA_TITLE = "title"
     }
 
     override fun onReceive(
@@ -46,25 +43,13 @@ class ReminderActionReceiver : BroadcastReceiver() {
 
         if (
             action != ACTION_PAID &&
-            action != ACTION_NOT_PAID
+            action != ACTION_LATER
         ) {
             return
         }
 
         val userId = intent.getStringExtra(
             EXTRA_USER_ID
-        ) ?: return
-
-        val workspaceId = intent.getStringExtra(
-            EXTRA_WORKSPACE_ID
-        ) ?: return
-
-        val accountId = intent.getStringExtra(
-            EXTRA_ACCOUNT_ID
-        ) ?: return
-
-        val categoryId = intent.getStringExtra(
-            EXTRA_CATEGORY_ID
         ) ?: return
 
         val reminderId = intent.getStringExtra(
@@ -76,40 +61,34 @@ class ReminderActionReceiver : BroadcastReceiver() {
             0L
         )
 
-        val amountCents = intent.getLongExtra(
-            EXTRA_AMOUNT_CENTS,
-            0L
-        )
-
-        val title = intent.getStringExtra(
-            EXTRA_TITLE
-        ) ?: "Pasaje"
+        if (triggerTime <= 0L) {
+            return
+        }
 
         if (
-            triggerTime <= 0L ||
-            amountCents <= 0L
+            userId !=
+            ReminderScheduler.activeUserId(context)
         ) {
             return
         }
 
-        val notificationId = (
-            reminderId + triggerTime
-        ).hashCode()
+        val reminder = ReminderStore(context)
+            .getById(reminderId)
+            ?: return
 
-        val currentUserId = FirebaseAuth
-            .getInstance()
-            .currentUser
-            ?.uid
-
-        if (currentUserId != userId) {
+        if (
+            !reminder.enabled ||
+            reminder.userId != userId
+        ) {
             return
         }
 
-        // Identificador único de este aviso.
+        val eventId =
+            "${reminderId}_${triggerTime}"
 
-        val eventId = "${reminderId}_${triggerTime}"
-
-        // Evitar que ambos botones procesen el mismo aviso.
+        val notificationId = (
+            reminderId + triggerTime
+        ).hashCode()
 
         val preferences = context.getSharedPreferences(
             "gastify_reminder_responses",
@@ -122,32 +101,36 @@ class ReminderActionReceiver : BroadcastReceiver() {
             return
         }
 
-        val saved = preferences.edit()
-            .putString(
-                responseKey,
-                action
-            )
-            .commit()
-
-        if (!saved) {
-            return
-        }
-
-        val notificationManager = context.getSystemService(
-            Context.NOTIFICATION_SERVICE
-        ) as NotificationManager
-
-        notificationManager.cancel(
-            notificationId
-        )
-
         // ======================================
-        // NO PAGUÉ
+        // MÁS TARDE
         // ======================================
 
-        if (action == ACTION_NOT_PAID) {
+        if (action == ACTION_LATER) {
 
-            // No se modifica ningún saldo.
+            try {
+
+                ReminderScheduler.snooze(
+                    context,
+                    reminderId,
+                    triggerTime
+                )
+
+                dismissNotification(
+                    context,
+                    notificationId
+                )
+
+            } catch (exception: Exception) {
+
+                ReminderPaymentFeedback.show(
+                    context,
+                    notificationId,
+                    "No se pudo aplazar",
+                    exception.localizedMessage
+                        ?: "Abre GASTIFY para revisar el recordatorio."
+                )
+            }
+
             return
         }
 
@@ -155,89 +138,91 @@ class ReminderActionReceiver : BroadcastReceiver() {
         // SÍ, PAGUÉ
         // ======================================
 
-        val data = Data.Builder()
+        val saved = preferences.edit()
+            .putString(
+                responseKey,
+                ACTION_PAID
+            )
+            .commit()
 
+        if (!saved) {
+            return
+        }
+
+        // Registrar el movimiento con los datos
+        // actuales del recordatorio.
+
+        val data = Data.Builder()
             .putString(
                 ReminderPaymentWorker.KEY_USER_ID,
-                userId
+                reminder.userId
             )
-
             .putString(
                 ReminderPaymentWorker.KEY_WORKSPACE_ID,
-                workspaceId
+                reminder.workspaceId
             )
-
             .putString(
                 ReminderPaymentWorker.KEY_ACCOUNT_ID,
-                accountId
+                reminder.accountId
             )
-
             .putString(
                 ReminderPaymentWorker.KEY_CATEGORY_ID,
-                categoryId
+                reminder.categoryId
             )
-
             .putString(
                 ReminderPaymentWorker.KEY_REMINDER_ID,
-                reminderId
+                reminder.id
             )
-
             .putLong(
                 ReminderPaymentWorker.KEY_TRIGGER_TIME,
                 triggerTime
             )
-
             .putLong(
                 ReminderPaymentWorker.KEY_AMOUNT_CENTS,
-                amountCents
+                reminder.amountCents
             )
-
             .putString(
                 ReminderPaymentWorker.KEY_TITLE,
-                title
+                reminder.title
             )
-
             .build()
 
         val constraints = Constraints.Builder()
-
             .setRequiredNetworkType(
                 NetworkType.CONNECTED
             )
-
             .build()
 
-        val request = OneTimeWorkRequestBuilder<ReminderPaymentWorker>()
-
-            .setInputData(data)
-
-            .setConstraints(constraints)
-
-            .setBackoffCriteria(
-                BackoffPolicy.EXPONENTIAL,
-                30,
-                TimeUnit.SECONDS
-            )
-
-            .build()
+        val request =
+            OneTimeWorkRequestBuilder<ReminderPaymentWorker>()
+                .setInputData(data)
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS
+                )
+                .build()
 
         try {
 
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
-
                     "gastify_payment_$eventId",
-
                     ExistingWorkPolicy.KEEP,
-
                     request
                 )
+
+            dismissNotification(
+                context,
+                notificationId
+            )
 
             ReminderPaymentFeedback.show(
                 context,
                 notificationId,
                 "Confirmación recibida",
-                "Registrando tu pasaje. Si no hay internet, quedará pendiente."
+                "Registrando el pago de tu pasaje."
             )
 
         } catch (_: Exception) {
@@ -250,8 +235,20 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 context,
                 notificationId,
                 "No se pudo procesar",
-                "Abre GASTIFY e intenta registrar el pasaje manualmente."
+                "Abre GASTIFY y registra el pago manualmente."
             )
         }
+    }
+
+    private fun dismissNotification(
+        context: Context,
+        notificationId: Int
+    ) {
+
+        val manager = context.getSystemService(
+            Context.NOTIFICATION_SERVICE
+        ) as NotificationManager
+
+        manager.cancel(notificationId)
     }
 }

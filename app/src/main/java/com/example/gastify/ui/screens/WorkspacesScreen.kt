@@ -2,11 +2,13 @@ package com.example.gastify.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.PointOfSale
 
 import androidx.compose.material3.*
 
@@ -14,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.example.gastify.data.model.Workspace
 
 import com.example.gastify.ui.components.GastifyIcons
+
 import com.example.gastify.ui.theme.*
 
 @Composable
@@ -32,7 +36,11 @@ fun WorkspacesScreen(
     onDeleteWorkspace: (String) -> Unit,
     onOpenCategories: (Workspace) -> Unit,
     onOpenAccounts: (Workspace) -> Unit,
-    onOpenReminders: (Workspace) -> Unit
+    onOpenReminders: (Workspace) -> Unit,
+    onOpenBudgets: (Workspace) -> Unit,
+    onOpenInventory: (Workspace) -> Unit,
+    onOpenCommerce: (Workspace) -> Unit,
+    onOpenProfitability: (Workspace) -> Unit
 ) {
 
     var showCreateDialog by rememberSaveable {
@@ -49,7 +57,9 @@ fun WorkspacesScreen(
 
     Column(
         modifier = modifier
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(
+                rememberScrollState()
+            )
             .padding(20.dp)
     ) {
 
@@ -72,14 +82,11 @@ fun WorkspacesScreen(
 
         Spacer(Modifier.height(28.dp))
 
-        // ======================================
-        // CREAR ESPACIO
-        // ======================================
-
         Button(
             onClick = {
 
                 workspaceName = ""
+
                 showCreateDialog = true
             },
 
@@ -99,8 +106,7 @@ fun WorkspacesScreen(
 
             Icon(
                 imageVector = GastifyIcons.add,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
+                contentDescription = null
             )
 
             Spacer(Modifier.width(8.dp))
@@ -121,10 +127,6 @@ fun WorkspacesScreen(
         )
 
         Spacer(Modifier.height(16.dp))
-
-        // ======================================
-        // LISTA DE ESPACIOS
-        // ======================================
 
         if (workspaces.isEmpty()) {
 
@@ -151,10 +153,9 @@ fun WorkspacesScreen(
                     Spacer(Modifier.height(10.dp))
 
                     Text(
-                        text = "Crea tu primer espacio para comenzar a organizar tus finanzas.",
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        color = TextSecondary
+                        text = "Crea tu primer espacio para comenzar.",
+                        color = TextSecondary,
+                        fontSize = 13.sp
                     )
                 }
             }
@@ -196,132 +197,75 @@ fun WorkspacesScreen(
 
                         Spacer(Modifier.height(20.dp))
 
-                        // ==========================
-                        // CATEGORÍAS
-                        // ==========================
-
-                        Button(
+                        WorkspaceActionButton(
+                            title = "Administrar categorías",
+                            icon = GastifyIcons.categories,
                             onClick = {
                                 onOpenCategories(workspace)
-                            },
-
-                            modifier = Modifier.fillMaxWidth(),
-
-                            shape = RoundedCornerShape(12.dp),
-
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardDark,
-                                contentColor = PrimaryGreen
-                            )
-                        ) {
-
-                            Icon(
-                                imageVector = GastifyIcons.categories,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            Text(
-                                text = "Administrar categorías",
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            Icon(
-                                imageVector = GastifyIcons.next,
-                                contentDescription = null
-                            )
-                        }
+                            }
+                        )
 
                         Spacer(Modifier.height(10.dp))
 
-                        // ==========================
-                        // CUENTAS
-                        // ==========================
-
-                        Button(
+                        WorkspaceActionButton(
+                            title = "Administrar cuentas",
+                            icon = GastifyIcons.accounts,
                             onClick = {
                                 onOpenAccounts(workspace)
-                            },
-
-                            modifier = Modifier.fillMaxWidth(),
-
-                            shape = RoundedCornerShape(12.dp),
-
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardDark,
-                                contentColor = TextPrimary
-                            )
-                        ) {
-
-                            Icon(
-                                imageVector = GastifyIcons.accounts,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            Text(
-                                text = "Administrar cuentas",
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            Icon(
-                                imageVector = GastifyIcons.next,
-                                contentDescription = null
-                            )
-                        }
+                            }
+                        )
 
                         Spacer(Modifier.height(10.dp))
 
-                        // ==========================
-                        // RECORDATORIOS
-                        // ==========================
-
-                        Button(
+                        WorkspaceActionButton(
+                            title = "Recordatorios",
+                            icon = Icons.Outlined.NotificationsActive,
                             onClick = {
                                 onOpenReminders(workspace)
-                            },
-
-                            modifier = Modifier.fillMaxWidth(),
-
-                            shape = RoundedCornerShape(12.dp),
-
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardDark,
-                                contentColor = PrimaryGreen
-                            )
-                        ) {
-
-                            Icon(
-                                imageVector = Icons.Outlined.NotificationsActive,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            Text(
-                                text = "Recordatorios",
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            Icon(
-                                imageVector = GastifyIcons.next,
-                                contentDescription = null
-                            )
-                        }
+                            }
+                        )
 
                         Spacer(Modifier.height(10.dp))
 
-                        // ==========================
-                        // ELIMINAR
-                        // ==========================
+                        WorkspaceActionButton(
+                            title = "Presupuestos",
+                            icon = GastifyIcons.statistics,
+                            onClick = {
+                                onOpenBudgets(workspace)
+                            }
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        WorkspaceActionButton(
+                            title = "Inventario",
+                            icon = Icons.Outlined.Inventory2,
+                            onClick = {
+                                onOpenInventory(workspace)
+                            }
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        WorkspaceActionButton(
+                            title = "Compras y ventas",
+                            icon = Icons.Outlined.PointOfSale,
+                            onClick = {
+                                onOpenCommerce(workspace)
+                            }
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        WorkspaceActionButton(
+                            title = "Rentabilidad",
+                            icon = GastifyIcons.statistics,
+                            onClick = {
+                                onOpenProfitability(workspace)
+                            }
+                        )
+
+                        Spacer(Modifier.height(10.dp))
 
                         TextButton(
                             onClick = {
@@ -362,6 +306,7 @@ fun WorkspacesScreen(
         val cleanName = workspaceName.trim()
 
         val alreadyExists = workspaces.any {
+
             it.name.equals(
                 cleanName,
                 ignoreCase = true
@@ -379,11 +324,7 @@ fun WorkspacesScreen(
             containerColor = SurfaceDark,
 
             title = {
-
-                Text(
-                    text = "Nuevo espacio",
-                    color = TextPrimary
-                )
+                Text("Nuevo espacio")
             },
 
             text = {
@@ -409,7 +350,7 @@ fun WorkspacesScreen(
                         },
 
                         placeholder = {
-                            Text("Ejemplo: Mis pasajes")
+                            Text("Ejemplo: Mi negocio")
                         },
 
                         singleLine = true,
@@ -461,15 +402,10 @@ fun WorkspacesScreen(
                 TextButton(
                     onClick = {
                         showCreateDialog = false
-                    },
-
-                    enabled = !isSaving
+                    }
                 ) {
 
-                    Text(
-                        text = "Cancelar",
-                        color = TextSecondary
-                    )
+                    Text("Cancelar")
                 }
             }
         )
@@ -493,17 +429,13 @@ fun WorkspacesScreen(
             containerColor = SurfaceDark,
 
             title = {
-
-                Text(
-                    text = "Eliminar espacio",
-                    color = TextPrimary
-                )
+                Text("Eliminar espacio")
             },
 
             text = {
 
                 Text(
-                    text = "¿Seguro que deseas eliminar \"${workspaceToDelete.name}\"?\n\nPor ahora, elimina únicamente espacios vacíos.",
+                    text = "¿Seguro que deseas eliminar \"${workspaceToDelete.name}\"?\n\nElimina únicamente espacios vacíos. Los datos asociados no se eliminan automáticamente.",
                     color = TextSecondary
                 )
             },
@@ -538,12 +470,54 @@ fun WorkspacesScreen(
                     }
                 ) {
 
-                    Text(
-                        text = "Cancelar",
-                        color = TextSecondary
-                    )
+                    Text("Cancelar")
                 }
             }
+        )
+    }
+}
+
+// ==========================================
+// BOTÓN DE ACCIÓN
+// ==========================================
+
+@Composable
+private fun WorkspaceActionButton(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+
+    Button(
+        onClick = onClick,
+
+        modifier = Modifier.fillMaxWidth(),
+
+        shape = RoundedCornerShape(12.dp),
+
+        colors = ButtonDefaults.buttonColors(
+            containerColor = CardDark,
+            contentColor = PrimaryGreen
+        )
+    ) {
+
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            fontWeight = FontWeight.Medium
+        )
+
+        Icon(
+            imageVector = GastifyIcons.next,
+            contentDescription = null
         )
     }
 }

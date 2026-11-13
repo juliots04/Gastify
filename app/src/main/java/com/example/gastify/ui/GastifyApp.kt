@@ -1,5 +1,7 @@
 package com.example.gastify.ui
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,8 +15,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -22,13 +24,25 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 import com.example.gastify.data.model.Workspace
 
+import com.example.gastify.data.local.NotificationPreferencesStore
+
+import com.example.gastify.notifications.BudgetAlertWorker
+import com.example.gastify.notifications.ReminderScheduler
+import com.example.gastify.notifications.StockAlertWorker
+
 import com.example.gastify.ui.components.GastifyIcons
+import com.example.gastify.ui.components.NotificationSettingsSection
 
 import com.example.gastify.ui.screens.AccountsScreen
+import com.example.gastify.ui.screens.BudgetsScreen
 import com.example.gastify.ui.screens.CategoriesScreen
+import com.example.gastify.ui.screens.CommerceScreen
 import com.example.gastify.ui.screens.GastifyHomeScreen
+import com.example.gastify.ui.screens.InventoryScreen
 import com.example.gastify.ui.screens.MovementsScreen
+import com.example.gastify.ui.screens.ProfitabilityScreen
 import com.example.gastify.ui.screens.RemindersScreen
+import com.example.gastify.ui.screens.StatisticsScreen
 import com.example.gastify.ui.screens.WorkspacesScreen
 
 import com.example.gastify.ui.theme.*
@@ -38,7 +52,7 @@ import com.example.gastify.viewmodel.WorkspaceViewModel
 import com.google.firebase.auth.FirebaseAuth
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL
+// PESTAÑAS PRINCIPALES
 // ==========================================
 
 private enum class MainSection(
@@ -73,7 +87,7 @@ private enum class MainSection(
 }
 
 // ==========================================
-// PANTALLAS DE ESPACIOS
+// SUBPANTALLAS
 // ==========================================
 
 private enum class WorkspaceSection {
@@ -82,11 +96,19 @@ private enum class WorkspaceSection {
 
     ACCOUNTS,
 
-    REMINDERS
+    REMINDERS,
+
+    BUDGETS,
+
+    INVENTORY,
+
+    COMMERCE,
+
+    PROFITABILITY
 }
 
 // ==========================================
-// APLICACIÓN PRINCIPAL
+// APLICACIÓN
 // ==========================================
 
 @Composable
@@ -94,17 +116,16 @@ fun GastifyApp(
     onSignOut: () -> Unit
 ) {
 
+    val context = LocalContext.current
+
     val userId = FirebaseAuth
         .getInstance()
         .currentUser
         ?.uid
         ?: return
 
-    // ======================================
-    // VIEWMODEL DE ESPACIOS
-    // ======================================
-
     val workspaceVm: WorkspaceViewModel = viewModel(
+
         key = "workspaces_$userId",
 
         factory = WorkspaceViewModel.factory(
@@ -121,7 +142,79 @@ fun GastifyApp(
         workspaceVm.startListening()
 
         onDispose {
+
             workspaceVm.stopListening()
+        }
+    }
+
+    // ======================================
+    // ACTIVAR NOTIFICACIONES PERMITIDAS
+    // ======================================
+
+    LaunchedEffect(userId) {
+
+        val notificationSettings =
+            NotificationPreferencesStore(
+                context,
+                userId
+            ).read()
+
+        // RECORDATORIOS
+
+        if (notificationSettings.remindersEnabled) {
+
+            ReminderScheduler.activateUser(
+                context,
+                userId
+            )
+
+            ReminderScheduler.scheduleAll(
+                context
+            )
+
+        } else {
+
+            ReminderScheduler.deactivateUser(
+                context
+            )
+        }
+
+        // PRESUPUESTOS
+
+        if (notificationSettings.budgetsEnabled) {
+
+            BudgetAlertWorker.ensureScheduled(
+                context
+            )
+
+            BudgetAlertWorker.checkNow(
+                context
+            )
+
+        } else {
+
+            BudgetAlertWorker.cancelScheduled(
+                context
+            )
+        }
+
+        // INVENTARIO
+
+        if (notificationSettings.stockEnabled) {
+
+            StockAlertWorker.ensureScheduled(
+                context
+            )
+
+            StockAlertWorker.checkNow(
+                context
+            )
+
+        } else {
+
+            StockAlertWorker.cancelScheduled(
+                context
+            )
         }
     }
 
@@ -130,34 +223,63 @@ fun GastifyApp(
     // ======================================
 
     var selectedSection by rememberSaveable {
-        mutableStateOf(MainSection.HOME.name)
+
+        mutableStateOf(
+            MainSection.HOME.name
+        )
     }
 
     var selectedWorkspaceId by rememberSaveable {
+
         mutableStateOf<String?>(null)
     }
 
     var selectedWorkspaceSection by rememberSaveable {
+
         mutableStateOf(
             WorkspaceSection.CATEGORIES.name
         )
     }
 
     var selectedMovementWorkspaceId by rememberSaveable {
+
         mutableStateOf<String?>(null)
     }
 
-    val currentSection = MainSection.entries.firstOrNull {
-        it.name == selectedSection
-    } ?: MainSection.HOME
+    var selectedStatisticsWorkspaceId by rememberSaveable {
 
-    val openedWorkspace = workspaceState.workspaces.firstOrNull {
-        it.id == selectedWorkspaceId
+        mutableStateOf<String?>(null)
     }
 
-    val openedMovementWorkspace = workspaceState.workspaces.firstOrNull {
-        it.id == selectedMovementWorkspaceId
+    var selectedHomeWorkspaceId by rememberSaveable(userId) {
+
+        mutableStateOf<String?>(null)
     }
+
+    val currentSection = MainSection.entries
+        .firstOrNull {
+
+            it.name == selectedSection
+
+        } ?: MainSection.HOME
+
+    val openedWorkspace = workspaceState.workspaces
+        .firstOrNull {
+
+            it.id == selectedWorkspaceId
+        }
+
+    val openedMovementWorkspace =
+        workspaceState.workspaces.firstOrNull {
+
+            it.id == selectedMovementWorkspaceId
+        }
+
+    val openedStatisticsWorkspace =
+        workspaceState.workspaces.firstOrNull {
+
+            it.id == selectedStatisticsWorkspaceId
+        }
 
     val currentWorkspaceSection =
         WorkspaceSection.entries.firstOrNull {
@@ -167,12 +289,50 @@ fun GastifyApp(
         } ?: WorkspaceSection.CATEGORIES
 
     // ======================================
+    // BOTÓN ATRÁS
+    // ======================================
+
+    BackHandler(
+        enabled =
+            openedWorkspace != null ||
+                openedMovementWorkspace != null ||
+                openedStatisticsWorkspace != null ||
+                currentSection != MainSection.HOME
+    ) {
+
+        when {
+
+            openedWorkspace != null -> {
+
+                selectedWorkspaceId = null
+            }
+
+            openedMovementWorkspace != null -> {
+
+                selectedMovementWorkspaceId = null
+            }
+
+            openedStatisticsWorkspace != null -> {
+
+                selectedStatisticsWorkspaceId = null
+            }
+
+            else -> {
+
+                selectedSection =
+                    MainSection.HOME.name
+            }
+        }
+    }
+
+    // ======================================
     // VALIDAR ESPACIOS
     // ======================================
 
     LaunchedEffect(
         selectedWorkspaceId,
         selectedMovementWorkspaceId,
+        selectedStatisticsWorkspaceId,
         workspaceState.isLoading,
         workspaceState.workspaces
     ) {
@@ -194,6 +354,14 @@ fun GastifyApp(
 
                 selectedMovementWorkspaceId = null
             }
+
+            if (
+                selectedStatisticsWorkspaceId != null &&
+                openedStatisticsWorkspace == null
+            ) {
+
+                selectedStatisticsWorkspaceId = null
+            }
         }
     }
 
@@ -202,10 +370,13 @@ fun GastifyApp(
     // ======================================
 
     val snackbar = remember {
+
         SnackbarHostState()
     }
 
-    LaunchedEffect(workspaceState.errorMessage) {
+    LaunchedEffect(
+        workspaceState.errorMessage
+    ) {
 
         workspaceState.errorMessage?.let {
 
@@ -215,19 +386,17 @@ fun GastifyApp(
         }
     }
 
-    val workspaceNames = workspaceState.workspaces.map {
-        it.name
-    }
-
     val inSubscreen =
         openedWorkspace != null ||
-            openedMovementWorkspace != null
+            openedMovementWorkspace != null ||
+            openedStatisticsWorkspace != null
 
     // ======================================
-    // INTERFAZ
+    // INTERFAZ PRINCIPAL
     // ======================================
 
     Scaffold(
+
         modifier = Modifier.fillMaxSize(),
 
         containerColor = AmoledBlack,
@@ -246,8 +415,7 @@ fun GastifyApp(
                 Column {
 
                     HorizontalDivider(
-                        color = BorderDark,
-                        thickness = 1.dp
+                        color = BorderDark
                     )
 
                     NavigationBar(
@@ -258,11 +426,14 @@ fun GastifyApp(
                         MainSection.entries.forEach { section ->
 
                             NavigationBarItem(
-                                selected = currentSection == section,
+
+                                selected =
+                                    currentSection == section,
 
                                 onClick = {
 
-                                    selectedSection = section.name
+                                    selectedSection =
+                                        section.name
                                 },
 
                                 icon = {
@@ -270,9 +441,11 @@ fun GastifyApp(
                                     Icon(
                                         imageVector = section.icon,
 
-                                        contentDescription = section.title,
+                                        contentDescription =
+                                            section.title,
 
-                                        modifier = Modifier.size(24.dp)
+                                        modifier =
+                                            Modifier.size(24.dp)
                                     )
                                 },
 
@@ -286,17 +459,24 @@ fun GastifyApp(
 
                                 alwaysShowLabel = true,
 
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = PrimaryGreen,
+                                colors =
+                                    NavigationBarItemDefaults.colors(
 
-                                    selectedTextColor = PrimaryGreen,
+                                        selectedIconColor =
+                                            PrimaryGreen,
 
-                                    indicatorColor = SurfaceDark,
+                                        selectedTextColor =
+                                            PrimaryGreen,
 
-                                    unselectedIconColor = TextSecondary,
+                                        indicatorColor =
+                                            SurfaceDark,
 
-                                    unselectedTextColor = TextSecondary
-                                )
+                                        unselectedIconColor =
+                                            TextSecondary,
+
+                                        unselectedTextColor =
+                                            TextSecondary
+                                    )
                             )
                         }
                     }
@@ -313,67 +493,101 @@ fun GastifyApp(
         ) {
 
             // ==================================
-            // SUBPANTALLAS DEL ESPACIO
+            // SUBPANTALLAS DE ESPACIOS
             // ==================================
 
             if (openedWorkspace != null) {
 
                 when (currentWorkspaceSection) {
 
-                    // CATEGORÍAS
-
                     WorkspaceSection.CATEGORIES -> {
 
                         CategoriesScreen(
                             userId = userId,
-
                             workspace = openedWorkspace,
 
                             onBack = {
-
                                 selectedWorkspaceId = null
                             }
                         )
                     }
-
-                    // CUENTAS
 
                     WorkspaceSection.ACCOUNTS -> {
 
                         AccountsScreen(
                             userId = userId,
-
                             workspace = openedWorkspace,
 
                             onBack = {
-
                                 selectedWorkspaceId = null
                             }
                         )
                     }
 
-                    // RECORDATORIOS
-
                     WorkspaceSection.REMINDERS -> {
 
                         RemindersScreen(
                             userId = userId,
-
                             workspace = openedWorkspace,
 
                             onBack = {
+                                selectedWorkspaceId = null
+                            }
+                        )
+                    }
 
+                    WorkspaceSection.BUDGETS -> {
+
+                        BudgetsScreen(
+                            userId = userId,
+                            workspace = openedWorkspace,
+
+                            onBack = {
+                                selectedWorkspaceId = null
+                            }
+                        )
+                    }
+
+                    WorkspaceSection.INVENTORY -> {
+
+                        InventoryScreen(
+                            userId = userId,
+                            workspace = openedWorkspace,
+
+                            onBack = {
+                                selectedWorkspaceId = null
+                            }
+                        )
+                    }
+
+                    WorkspaceSection.COMMERCE -> {
+
+                        CommerceScreen(
+                            userId = userId,
+                            workspace = openedWorkspace,
+
+                            onBack = {
+                                selectedWorkspaceId = null
+                            }
+                        )
+                    }
+
+                    WorkspaceSection.PROFITABILITY -> {
+
+                        ProfitabilityScreen(
+                            userId = userId,
+                            workspace = openedWorkspace,
+
+                            onBack = {
                                 selectedWorkspaceId = null
                             }
                         )
                     }
                 }
 
-            } else if (openedMovementWorkspace != null) {
-
-                // ==================================
-                // MOVIMIENTOS
-                // ==================================
+            } else if (
+                openedMovementWorkspace != null
+            ) {
 
                 MovementsScreen(
                     userId = userId,
@@ -381,129 +595,236 @@ fun GastifyApp(
                     workspace = openedMovementWorkspace,
 
                     onBack = {
-
                         selectedMovementWorkspaceId = null
+                    }
+                )
+
+            } else if (
+                openedStatisticsWorkspace != null
+            ) {
+
+                StatisticsScreen(
+                    userId = userId,
+
+                    workspace = openedStatisticsWorkspace,
+
+                    onBack = {
+                        selectedStatisticsWorkspaceId = null
                     }
                 )
 
             } else {
 
                 // ==================================
-                // NAVEGACIÓN PRINCIPAL
+                // PESTAÑAS PRINCIPALES
                 // ==================================
 
                 when (currentSection) {
 
-                    // INICIO
-
                     MainSection.HOME -> {
 
                         GastifyHomeScreen(
+
                             modifier = Modifier.fillMaxSize(),
 
-                            workspaces = workspaceNames
-                        )
-                    }
+                            userId = userId,
 
-                    // MOVIMIENTOS
+                            workspaces =
+                                workspaceState.workspaces,
 
-                    MainSection.MOVEMENTS -> {
+                            selectedWorkspaceId =
+                                selectedHomeWorkspaceId,
 
-                        MovementWorkspacePicker(
-                            modifier = Modifier.fillMaxSize(),
+                            onSelectWorkspace = {
 
-                            workspaces = workspaceState.workspaces,
-
-                            onOpenWorkspace = { workspace ->
-
-                                selectedMovementWorkspaceId =
-                                    workspace.id
-                            }
-                        )
-                    }
-
-                    // ESPACIOS
-
-                    MainSection.WORKSPACES -> {
-
-                        WorkspacesScreen(
-                            modifier = Modifier.fillMaxSize(),
-
-                            workspaces = workspaceState.workspaces,
-
-                            isSaving = workspaceState.isSaving,
-
-                            onAddWorkspace = { name ->
-
-                                workspaceVm.createWorkspace(
-                                    name
-                                )
+                                selectedHomeWorkspaceId = it
                             },
 
-                            onDeleteWorkspace = { name ->
+                            onOpenSpaces = {
 
-                                workspaceVm.deleteWorkspace(
-                                    name
-                                )
+                                selectedSection =
+                                    MainSection.WORKSPACES.name
                             },
 
-                            onOpenCategories = { workspace ->
-
-                                selectedWorkspaceSection =
-                                    WorkspaceSection.CATEGORIES.name
-
-                                selectedWorkspaceId = workspace.id
-                            },
-
-                            onOpenAccounts = { workspace ->
+                            onOpenAccounts = {
 
                                 selectedWorkspaceSection =
                                     WorkspaceSection.ACCOUNTS.name
 
-                                selectedWorkspaceId = workspace.id
+                                selectedWorkspaceId = it.id
                             },
 
-                            onOpenReminders = { workspace ->
+                            onOpenMovements = {
+
+                                selectedMovementWorkspaceId = it.id
+                            },
+
+                            onOpenReminders = {
 
                                 selectedWorkspaceSection =
                                     WorkspaceSection.REMINDERS.name
 
-                                selectedWorkspaceId = workspace.id
+                                selectedWorkspaceId = it.id
                             }
                         )
                     }
 
-                    // ESTADÍSTICAS
+                    MainSection.MOVEMENTS -> {
+
+                        WorkspacePicker(
+
+                            modifier = Modifier.fillMaxSize(),
+
+                            title = "Movimientos",
+
+                            subtitle = "Selecciona un espacio para consultar ingresos y gastos.",
+
+                            buttonText = "Ver movimientos",
+
+                            buttonIcon = GastifyIcons.movements,
+
+                            workspaces =
+                                workspaceState.workspaces,
+
+                            onOpenWorkspace = {
+
+                                selectedMovementWorkspaceId = it.id
+                            }
+                        )
+                    }
+
+                    MainSection.WORKSPACES -> {
+
+                        WorkspacesScreen(
+
+                            modifier = Modifier.fillMaxSize(),
+
+                            workspaces =
+                                workspaceState.workspaces,
+
+                            isSaving =
+                                workspaceState.isSaving,
+
+                            onAddWorkspace = {
+
+                                workspaceVm.createWorkspace(it)
+                            },
+
+                            onDeleteWorkspace = {
+
+                                workspaceVm.deleteWorkspace(it)
+                            },
+
+                            onOpenCategories = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.CATEGORIES.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenAccounts = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.ACCOUNTS.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenReminders = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.REMINDERS.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenBudgets = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.BUDGETS.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenInventory = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.INVENTORY.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenCommerce = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.COMMERCE.name
+
+                                selectedWorkspaceId = it.id
+                            },
+
+                            onOpenProfitability = {
+
+                                selectedWorkspaceSection =
+                                    WorkspaceSection.PROFITABILITY.name
+
+                                selectedWorkspaceId = it.id
+                            }
+                        )
+                    }
 
                     MainSection.STATISTICS -> {
 
-                        SectionPlaceholder(
+                        WorkspacePicker(
+
                             modifier = Modifier.fillMaxSize(),
 
                             title = "Estadísticas",
 
-                            subtitle = "Aquí visualizarás gráficos, reportes y análisis financieros.",
+                            subtitle = "Selecciona un espacio para analizar tus finanzas.",
 
-                            icon = GastifyIcons.statistics
+                            buttonText = "Ver estadísticas",
+
+                            buttonIcon = GastifyIcons.statistics,
+
+                            workspaces =
+                                workspaceState.workspaces,
+
+                            onOpenWorkspace = {
+
+                                selectedStatisticsWorkspaceId = it.id
+                            }
                         )
                     }
-
-                    // CONFIGURACIÓN
 
                     MainSection.SETTINGS -> {
 
                         SettingsScreen(
+
                             modifier = Modifier.fillMaxSize(),
 
-                            onSignOut = onSignOut
+                            userId = userId,
+
+                            onSignOut = {
+
+                                ReminderScheduler.deactivateUser(
+                                    context
+                                )
+
+                                BudgetAlertWorker.cancelScheduled(
+                                    context
+                                )
+
+                                StockAlertWorker.cancelScheduled(
+                                    context
+                                )
+
+                                onSignOut()
+                            }
                         )
                     }
                 }
             }
-
-            // ==================================
-            // CARGA INICIAL
-            // ==================================
 
             if (workspaceState.isLoading) {
 
@@ -523,40 +844,52 @@ fun GastifyApp(
 }
 
 // ==========================================
-// SELECTOR DE ESPACIOS PARA MOVIMIENTOS
+// SELECTOR DE ESPACIOS
 // ==========================================
 
 @Composable
-private fun MovementWorkspacePicker(
+private fun WorkspacePicker(
     modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    buttonText: String,
+    buttonIcon: ImageVector,
     workspaces: List<Workspace>,
     onOpenWorkspace: (Workspace) -> Unit
 ) {
 
     Column(
         modifier = modifier
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(
+                rememberScrollState()
+            )
             .padding(20.dp)
     ) {
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(
+            Modifier.height(16.dp)
+        )
 
         Text(
-            text = "Movimientos",
+            text = title,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(
+            Modifier.height(8.dp)
+        )
 
         Text(
-            text = "Selecciona un espacio para consultar o registrar movimientos.",
+            text = subtitle,
             fontSize = 14.sp,
             lineHeight = 21.sp,
             color = TextSecondary
         )
 
-        Spacer(Modifier.height(30.dp))
+        Spacer(
+            Modifier.height(30.dp)
+        )
 
         Text(
             text = "Mis espacios",
@@ -564,37 +897,27 @@ private fun MovementWorkspacePicker(
             fontWeight = FontWeight.SemiBold
         )
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(
+            Modifier.height(18.dp)
+        )
 
         if (workspaces.isEmpty()) {
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
 
-                shape = RoundedCornerShape(20.dp),
-
                 colors = CardDefaults.cardColors(
                     containerColor = SurfaceDark
                 )
             ) {
 
-                Column(
-                    modifier = Modifier.padding(24.dp)
-                ) {
+                Text(
+                    text = "Crea primero un espacio desde la pestaña Espacios.",
 
-                    Text(
-                        text = "Todavía no tienes espacios",
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    modifier = Modifier.padding(24.dp),
 
-                    Spacer(Modifier.height(10.dp))
-
-                    Text(
-                        text = "Crea un espacio desde la pestaña Espacios.",
-                        color = TextSecondary,
-                        fontSize = 13.sp
-                    )
-                }
+                    color = TextSecondary
+                )
             }
 
         } else {
@@ -622,13 +945,17 @@ private fun MovementWorkspacePicker(
                         ) {
 
                             Icon(
-                                imageVector = GastifyIcons.workspaces,
+                                imageVector =
+                                    GastifyIcons.workspaces,
+
                                 contentDescription = null,
-                                tint = PrimaryGreen,
-                                modifier = Modifier.size(24.dp)
+
+                                tint = PrimaryGreen
                             )
 
-                            Spacer(Modifier.width(10.dp))
+                            Spacer(
+                                Modifier.width(10.dp)
+                            )
 
                             Text(
                                 text = workspace.name,
@@ -637,24 +964,27 @@ private fun MovementWorkspacePicker(
                             )
                         }
 
-                        Spacer(Modifier.height(8.dp))
-
-                        Text(
-                            text = "Consultar ingresos y gastos",
-                            fontSize = 13.sp,
-                            color = TextSecondary
+                        Spacer(
+                            Modifier.height(8.dp)
                         )
 
-                        Spacer(Modifier.height(18.dp))
+                        Text(
+                            text = "Espacio financiero",
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+
+                        Spacer(
+                            Modifier.height(18.dp)
+                        )
 
                         Button(
                             onClick = {
+
                                 onOpenWorkspace(workspace)
                             },
 
                             modifier = Modifier.fillMaxWidth(),
-
-                            shape = RoundedCornerShape(12.dp),
 
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = CardDark,
@@ -663,17 +993,17 @@ private fun MovementWorkspacePicker(
                         ) {
 
                             Icon(
-                                imageVector = GastifyIcons.movements,
-                                contentDescription = null,
-                                modifier = Modifier.size(19.dp)
+                                imageVector = buttonIcon,
+                                contentDescription = null
                             )
 
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(
+                                Modifier.width(8.dp)
+                            )
 
                             Text(
-                                text = "Ver movimientos",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = FontWeight.Medium
+                                text = buttonText,
+                                modifier = Modifier.weight(1f)
                             )
 
                             Icon(
@@ -689,80 +1019,13 @@ private fun MovementWorkspacePicker(
 }
 
 // ==========================================
-// PANTALLAS PENDIENTES
-// ==========================================
-
-@Composable
-private fun SectionPlaceholder(
-    modifier: Modifier = Modifier,
-    title: String,
-    subtitle: String,
-    icon: ImageVector
-) {
-
-    Column(
-        modifier = modifier.padding(28.dp),
-
-        verticalArrangement = Arrangement.Center,
-
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-
-        Surface(
-            color = SurfaceDark,
-            shape = RoundedCornerShape(28.dp)
-        ) {
-
-            Box(
-                modifier = Modifier.size(92.dp),
-
-                contentAlignment = Alignment.Center
-            ) {
-
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = PrimaryGreen,
-                    modifier = Modifier.size(42.dp)
-                )
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            text = title,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        Text(
-            text = subtitle,
-            fontSize = 14.sp,
-            color = TextSecondary,
-            textAlign = TextAlign.Center,
-            lineHeight = 22.sp
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        Text(
-            text = "Próximamente",
-            fontSize = 12.sp,
-            color = PrimaryGreen
-        )
-    }
-}
-
-// ==========================================
 // CONFIGURACIÓN
 // ==========================================
 
 @Composable
 private fun SettingsScreen(
     modifier: Modifier = Modifier,
+    userId: String,
     onSignOut: () -> Unit
 ) {
 
@@ -771,10 +1034,16 @@ private fun SettingsScreen(
         .currentUser
 
     Column(
-        modifier = modifier.padding(24.dp)
+        modifier = modifier
+            .verticalScroll(
+                rememberScrollState()
+            )
+            .padding(24.dp)
     ) {
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(
+            Modifier.height(16.dp)
+        )
 
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -782,12 +1051,15 @@ private fun SettingsScreen(
 
             Icon(
                 imageVector = GastifyIcons.settings,
+
                 contentDescription = null,
-                tint = PrimaryGreen,
-                modifier = Modifier.size(27.dp)
+
+                tint = PrimaryGreen
             )
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(
+                Modifier.width(10.dp)
+            )
 
             Text(
                 text = "Configuración",
@@ -796,7 +1068,13 @@ private fun SettingsScreen(
             )
         }
 
-        Spacer(Modifier.height(30.dp))
+        Spacer(
+            Modifier.height(30.dp)
+        )
+
+        // ======================================
+        // CUENTA
+        // ======================================
 
         Text(
             text = "Mi cuenta",
@@ -804,7 +1082,9 @@ private fun SettingsScreen(
             fontWeight = FontWeight.SemiBold
         )
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(
+            Modifier.height(20.dp)
+        )
 
         Text(
             text = user?.displayName ?: "Usuario",
@@ -812,7 +1092,9 @@ private fun SettingsScreen(
             fontWeight = FontWeight.Medium
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(
+            Modifier.height(8.dp)
+        )
 
         Text(
             text = user?.email ?: "",
@@ -820,13 +1102,41 @@ private fun SettingsScreen(
             color = TextSecondary
         )
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(
+            Modifier.height(28.dp)
+        )
 
         HorizontalDivider(
             color = BorderDark
         )
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(
+            Modifier.height(28.dp)
+        )
+
+        // ======================================
+        // NOTIFICACIONES
+        // ======================================
+
+        NotificationSettingsSection(
+            userId = userId
+        )
+
+        Spacer(
+            Modifier.height(32.dp)
+        )
+
+        HorizontalDivider(
+            color = BorderDark
+        )
+
+        Spacer(
+            Modifier.height(20.dp)
+        )
+
+        // ======================================
+        // CERRAR SESIÓN
+        // ======================================
 
         OutlinedButton(
             onClick = onSignOut,
@@ -839,13 +1149,19 @@ private fun SettingsScreen(
                 tint = ExpenseRed
             )
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(
+                Modifier.width(8.dp)
+            )
 
             Text(
                 text = "Cerrar sesión",
-                fontWeight = FontWeight.SemiBold,
-                color = ExpenseRed
+                color = ExpenseRed,
+                fontWeight = FontWeight.SemiBold
             )
         }
+
+        Spacer(
+            Modifier.height(24.dp)
+        )
     }
 }
