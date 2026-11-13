@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 
 import com.example.gastify.data.model.CommerceOperation
+import com.example.gastify.data.model.CommerceOperationType
 import com.example.gastify.data.model.CommerceRequest
 
 import com.example.gastify.data.repository.CommerceRepository
+
+import com.example.gastify.util.FirebaseErrorFormatter
 
 import com.google.firebase.firestore.ListenerRegistration
 
@@ -15,6 +18,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 import java.util.UUID
+
+// ==========================================
+// ESTADO DE COMPRAS Y VENTAS
+// ==========================================
 
 data class CommerceUiState(
 
@@ -29,6 +36,10 @@ data class CommerceUiState(
     val successMessage: String? = null
 )
 
+// ==========================================
+// VIEWMODEL
+// ==========================================
+
 class CommerceViewModel(
     private val repository: CommerceRepository
 ) : ViewModel() {
@@ -42,27 +53,41 @@ class CommerceViewModel(
 
     private var listener: ListenerRegistration? = null
 
-    // Permiten reintentar una misma operación
-    // sin generar otro identificador.
+    private var listenerGeneration = 0L
+
+    private var isActive = true
+
+    // ======================================
+    // OPERACIÓN PENDIENTE
+    // ======================================
 
     private var pendingRequest: CommerceRequest? = null
 
     private var pendingOperationId: String? = null
 
-    // ==========================================
+    // ======================================
     // ESCUCHAR HISTORIAL
-    // ==========================================
+    // ======================================
 
     fun startListening() {
 
-        if (listener != null) {
+        if (
+            listener != null ||
+            !isActive
+        ) {
             return
         }
+
+        listenerGeneration++
+
+        val currentGeneration =
+            listenerGeneration
 
         _uiState.update {
 
             it.copy(
-                isLoading = true
+                isLoading = true,
+                errorMessage = null
             )
         }
 
@@ -70,55 +95,95 @@ class CommerceViewModel(
 
             onSuccess = { operations ->
 
-                _uiState.update {
+                if (
+                    isActive &&
+                    currentGeneration == listenerGeneration
+                ) {
 
-                    it.copy(
-                        operations = operations,
-                        isLoading = false,
-                        errorMessage = null
-                    )
+                    // MutableStateFlow evita propagar
+                    // estados iguales.
+
+                    _uiState.update { current ->
+
+                        if (
+                            current.operations == operations &&
+                            !current.isLoading
+                        ) {
+
+                            current
+
+                        } else {
+
+                            current.copy(
+
+                                operations = operations,
+
+                                isLoading = false,
+
+                                errorMessage = null
+                            )
+                        }
+                    }
                 }
             },
 
             onError = { exception ->
 
-                _uiState.update {
+                if (
+                    isActive &&
+                    currentGeneration == listenerGeneration
+                ) {
 
-                    it.copy(
-                        isLoading = false,
+                    _uiState.update {
 
-                        errorMessage =
-                            exception.localizedMessage
-                                ?: "No se pudo cargar el historial."
-                    )
+                        it.copy(
+
+                            isLoading = false,
+
+                            errorMessage =
+                                FirebaseErrorFormatter.message(
+                                    exception,
+                                    "consultar compras y ventas"
+                                )
+                        )
+                    }
                 }
             }
         )
     }
 
-    // ==========================================
-    // DETENER ESCUCHA
-    // ==========================================
+    // ======================================
+    // DETENER HISTORIAL
+    // ======================================
 
     fun stopListening() {
+
+        listenerGeneration++
 
         listener?.remove()
 
         listener = null
     }
 
-    // ==========================================
+    // ======================================
     // REGISTRAR COMPRA O VENTA
-    // ==========================================
+    // ======================================
 
     fun registerOperation(
         request: CommerceRequest,
         onSuccess: () -> Unit = {}
     ) {
 
-        if (_uiState.value.isSaving) {
+        if (
+            !isActive ||
+            _uiState.value.isSaving
+        ) {
             return
         }
+
+        // Si el usuario reintenta exactamente
+        // la misma operación, reutilizamos
+        // el identificador anterior.
 
         val operationId = if (
             pendingRequest == request &&
@@ -139,6 +204,7 @@ class CommerceViewModel(
         _uiState.update {
 
             it.copy(
+
                 isSaving = true,
 
                 errorMessage = null,
@@ -146,6 +212,10 @@ class CommerceViewModel(
                 successMessage = null
             )
         }
+
+        // ======================================
+        // ENVIAR TRANSACCIÓN
+        // ======================================
 
         try {
 
@@ -157,72 +227,102 @@ class CommerceViewModel(
 
                 onSuccess = {
 
-                    pendingRequest = null
+                    if (isActive) {
 
-                    pendingOperationId = null
+                        // La operación se confirmó
+                        // o ya existía con el mismo
+                        // identificador.
 
-                    _uiState.update {
+                        pendingRequest = null
 
-                        it.copy(
-                            isSaving = false,
+                        pendingOperationId = null
 
-                            successMessage = when (
-                                request.type
-                            ) {
+                        val message = when (
+                            request.type
+                        ) {
 
-                                com.example.gastify.data.model
-                                    .CommerceOperationType.PURCHASE ->
-                                    "Compra registrada correctamente."
+                            CommerceOperationType.PURCHASE -> {
 
-                                com.example.gastify.data.model
-                                    .CommerceOperationType.SALE ->
-                                    "Venta registrada correctamente."
+                                "Compra registrada correctamente."
                             }
-                        )
-                    }
 
-                    onSuccess()
+                            CommerceOperationType.SALE -> {
+
+                                "Venta registrada correctamente."
+                            }
+                        }
+
+                        _uiState.update {
+
+                            it.copy(
+
+                                isSaving = false,
+
+                                errorMessage = null,
+
+                                successMessage = message
+                            )
+                        }
+
+                        onSuccess()
+                    }
                 },
 
                 onError = { exception ->
 
-                    _uiState.update {
+                    if (isActive) {
 
-                        it.copy(
-                            isSaving = false,
+                        // Conservamos operationId para
+                        // permitir un reintento seguro.
 
-                            errorMessage =
-                                exception.localizedMessage
-                                    ?: "No se pudo registrar la operación."
-                        )
+                        _uiState.update {
+
+                            it.copy(
+
+                                isSaving = false,
+
+                                errorMessage =
+                                    FirebaseErrorFormatter.message(
+                                        exception,
+                                        "registrar la operación"
+                                    )
+                            )
+                        }
                     }
                 }
             )
 
         } catch (exception: Exception) {
 
-            _uiState.update {
+            if (isActive) {
 
-                it.copy(
-                    isSaving = false,
+                _uiState.update {
 
-                    errorMessage =
-                        exception.localizedMessage
-                            ?: "Los datos de la operación no son válidos."
-                )
+                    it.copy(
+
+                        isSaving = false,
+
+                        errorMessage =
+                            FirebaseErrorFormatter.message(
+                                exception,
+                                "registrar la operación"
+                            )
+                    )
+                }
             }
         }
     }
 
-    // ==========================================
+    // ======================================
     // LIMPIAR MENSAJES
-    // ==========================================
+    // ======================================
 
     fun clearMessages() {
 
         _uiState.update {
 
             it.copy(
+
                 errorMessage = null,
 
                 successMessage = null
@@ -230,12 +330,22 @@ class CommerceViewModel(
         }
     }
 
+    // ======================================
+    // LIBERAR RECURSOS
+    // ======================================
+
     override fun onCleared() {
+
+        isActive = false
 
         stopListening()
 
         super.onCleared()
     }
+
+    // ======================================
+    // FACTORY
+    // ======================================
 
     companion object {
 
@@ -258,10 +368,12 @@ class CommerceViewModel(
                     )
 
                     return CommerceViewModel(
+
                         CommerceRepository(
                             userId,
                             workspaceId
                         )
+
                     ) as T
                 }
             }

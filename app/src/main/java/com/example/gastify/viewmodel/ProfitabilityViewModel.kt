@@ -7,11 +7,17 @@ import com.example.gastify.data.model.CommerceOperation
 
 import com.example.gastify.data.repository.ProfitabilityRepository
 
+import com.example.gastify.util.FirebaseErrorFormatter
+
 import com.google.firebase.firestore.ListenerRegistration
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+
+// ==========================================
+// ESTADO DE RENTABILIDAD
+// ==========================================
 
 data class ProfitabilityUiState(
 
@@ -23,6 +29,10 @@ data class ProfitabilityUiState(
 
     val errorMessage: String? = null
 )
+
+// ==========================================
+// VIEWMODEL
+// ==========================================
 
 class ProfitabilityViewModel(
     private val repository: ProfitabilityRepository
@@ -41,14 +51,25 @@ class ProfitabilityViewModel(
 
     private var currentEnd: Long? = null
 
-    // ==========================================
+    private var listenerGeneration = 0L
+
+    private var isActive = true
+
+    // ======================================
     // CONSULTAR PERÍODO
-    // ==========================================
+    // ======================================
 
     fun startListening(
         startMillis: Long,
         endMillis: Long
     ) {
+
+        if (!isActive) {
+            return
+        }
+
+        // Evitar crear otra escucha cuando
+        // ya estamos consultando el mismo mes.
 
         if (
             listener != null &&
@@ -58,61 +79,136 @@ class ProfitabilityViewModel(
             return
         }
 
+        // Desconectar el período anterior.
+
         stopListening()
 
         currentStart = startMillis
 
         currentEnd = endMillis
 
+        val currentGeneration =
+            listenerGeneration
+
+        // Limpiar datos del mes anterior
+        // para evitar mezclarlos.
+
         _uiState.update {
 
             it.copy(
+
                 operations = emptyList(),
+
                 isLoading = true,
+
                 isFromCache = false,
+
                 errorMessage = null
             )
         }
 
-        listener = repository.listenMonth(
+        // ======================================
+        // CONSULTAR FIREBASE
+        // ======================================
 
-            startMillis = startMillis,
+        try {
 
-            endMillis = endMillis,
+            listener = repository.listenMonth(
 
-            onSuccess = { operations, fromCache ->
+                startMillis = startMillis,
 
-                _uiState.update {
+                endMillis = endMillis,
 
-                    it.copy(
-                        operations = operations,
-                        isLoading = false,
-                        isFromCache = fromCache,
-                        errorMessage = null
-                    )
+                onSuccess = { operations, fromCache ->
+
+                    if (
+                        isActive &&
+                        currentGeneration == listenerGeneration
+                    ) {
+
+                        _uiState.update { current ->
+
+                            // No generar cambios si
+                            // la información es igual.
+
+                            if (
+                                current.operations == operations &&
+                                current.isFromCache == fromCache &&
+                                !current.isLoading &&
+                                current.errorMessage == null
+                            ) {
+
+                                current
+
+                            } else {
+
+                                current.copy(
+
+                                    operations = operations,
+
+                                    isLoading = false,
+
+                                    isFromCache = fromCache,
+
+                                    errorMessage = null
+                                )
+                            }
+                        }
+                    }
+                },
+
+                onError = { exception ->
+
+                    if (
+                        isActive &&
+                        currentGeneration == listenerGeneration
+                    ) {
+
+                        _uiState.update {
+
+                            // Mantener los datos que ya
+                            // se hayan recibido.
+
+                            it.copy(
+
+                                isLoading = false,
+
+                                errorMessage =
+                                    FirebaseErrorFormatter.message(
+                                        exception,
+                                        "consultar la rentabilidad"
+                                    )
+                            )
+                        }
+                    }
                 }
-            },
+            )
 
-            onError = { exception ->
+        } catch (exception: Exception) {
 
-                _uiState.update {
+            _uiState.update {
 
-                    it.copy(
-                        isLoading = false,
-                        errorMessage =
-                            exception.localizedMessage
-                                ?: "No se pudo consultar la rentabilidad."
-                    )
-                }
+                it.copy(
+
+                    isLoading = false,
+
+                    errorMessage =
+                        FirebaseErrorFormatter.message(
+                            exception,
+                            "consultar la rentabilidad"
+                        )
+                )
             }
-        )
+        }
     }
 
-    // ==========================================
+    // ======================================
     // DETENER CONSULTA
-    // ==========================================
+    // ======================================
 
     fun stopListening() {
+
+        listenerGeneration++
 
         listener?.remove()
 
@@ -123,9 +219,9 @@ class ProfitabilityViewModel(
         currentEnd = null
     }
 
-    // ==========================================
+    // ======================================
     // LIMPIAR ERROR
-    // ==========================================
+    // ======================================
 
     fun clearError() {
 
@@ -137,12 +233,22 @@ class ProfitabilityViewModel(
         }
     }
 
+    // ======================================
+    // LIBERAR RECURSOS
+    // ======================================
+
     override fun onCleared() {
+
+        isActive = false
 
         stopListening()
 
         super.onCleared()
     }
+
+    // ======================================
+    // FACTORY
+    // ======================================
 
     companion object {
 
@@ -165,10 +271,12 @@ class ProfitabilityViewModel(
                     )
 
                     return ProfitabilityViewModel(
+
                         ProfitabilityRepository(
                             userId,
                             workspaceId
                         )
+
                     ) as T
                 }
             }
