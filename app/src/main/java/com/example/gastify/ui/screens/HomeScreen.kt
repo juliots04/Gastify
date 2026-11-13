@@ -385,16 +385,6 @@ private fun DashboardWorkspaceContent(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "GASTIFY",
-                    color = PrimaryGreen,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
                     text = "Panel de control",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,

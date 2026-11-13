@@ -34,6 +34,7 @@ import com.example.gastify.notifications.ReminderScheduler
 import com.example.gastify.notifications.StockAlertWorker
 
 import com.example.gastify.ui.components.AppPreferencesSection
+import com.example.gastify.ui.components.GastifyHeader
 import com.example.gastify.ui.components.GastifyIcons
 import com.example.gastify.ui.components.NotificationSettingsSection
 import com.example.gastify.ui.components.OfflineSyncBanner
@@ -646,6 +647,15 @@ fun GastifyApp(
             OfflineSyncBanner(
                 state = syncState
             )
+
+            // ==============================
+            // HEADER GLOBAL
+            // ==============================
+
+            if (!inSubscreen) {
+
+                GastifyHeader()
+            }
 
             // ==============================
             // CONTENIDO DE GASTIFY

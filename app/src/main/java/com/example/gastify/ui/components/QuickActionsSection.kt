@@ -27,6 +27,7 @@ import com.example.gastify.data.model.Category
 import com.example.gastify.data.model.MovementType
 import com.example.gastify.data.model.QuickAction
 import com.example.gastify.data.model.Workspace
+import com.example.gastify.util.BiometricHelper
 
 import com.example.gastify.ui.theme.*
 
@@ -199,6 +200,79 @@ fun QuickActionsSection(
         showEditor = true
     }
 
+    val isBiometricAvailable = remember(context) {
+        BiometricHelper.isBiometricAvailable(context)
+    }
+
+    fun handleRegisterClick(action: QuickAction) {
+
+        val account = accounts.firstOrNull {
+            it.id == action.accountId
+        }
+
+        val category = categories.firstOrNull {
+            it.id == action.categoryId &&
+                it.type == action.type
+        }
+
+        // Si falta cuenta o categoría, abrimos el diálogo de confirmación para mostrar el estado
+        if (account == null || category == null) {
+            confirmingAction = action
+            return
+        }
+
+        // Validar saldo suficiente antes de autenticar
+        val nextBalance = try {
+            if (action.type == MovementType.INCOME.name) {
+                Math.addExact(account.balanceCents, action.amountCents)
+            } else {
+                Math.subtractExact(account.balanceCents, action.amountCents)
+            }
+        } catch (_: ArithmeticException) {
+            null
+        }
+
+        val validBalance =
+            nextBalance != null &&
+                nextBalance in 0L..MAX_QUICK_AMOUNT
+
+        // Si el saldo no es válido, se muestra el diálogo con la advertencia correspondiente
+        if (!validBalance) {
+            confirmingAction = action
+            return
+        }
+
+        // Si el celular es compatible con huella y está configurada, pedimos huella
+        val activity = BiometricHelper.findFragmentActivity(context)
+
+        if (activity != null && isBiometricAvailable) {
+
+            BiometricHelper.authenticate(
+                activity = activity,
+                title = "Confirmar registro",
+                subtitle = null,
+                description = "Usa tu huella para registrar",
+                negativeButtonText = "Confirmar con ventana",
+                onSuccess = {
+                    localMessage = null
+                    onRegister(action)
+                },
+                onFallback = {
+                    // Fallback a la ventana de confirmación manual
+                    confirmingAction = action
+                },
+                onError = { _, errString ->
+                    localMessage = errString.toString()
+                }
+            )
+
+        } else {
+
+            // Fallback directo a la ventana de confirmación cuando no es compatible o no hay huella
+            confirmingAction = action
+        }
+    }
+
     // ======================================
     // ENCABEZADO
     // ======================================
@@ -350,24 +424,49 @@ fun QuickActionsSection(
                             modifier = Modifier.padding(16.dp)
                         ) {
 
-                            Surface(
-                                color = CardDark,
-                                shape = RoundedCornerShape(12.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement =
+                                    Arrangement.SpaceBetween,
+                                verticalAlignment =
+                                    Alignment.CenterVertically
                             ) {
 
-                                Box(
-                                    modifier = Modifier.size(44.dp),
-                                    contentAlignment = Alignment.Center
+                                Surface(
+                                    color = CardDark,
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+
+                                    Box(
+                                        modifier = Modifier.size(44.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+
+                                        Icon(
+                                            imageVector =
+                                                GastifyIcons.category(
+                                                    category?.icon ?: ""
+                                                ),
+                                            contentDescription = null,
+                                            tint = PrimaryGreen,
+                                            modifier = Modifier.size(25.dp)
+                                        )
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        openEditor(action)
+                                    },
+                                    enabled = !isSaving,
+                                    modifier = Modifier.size(36.dp)
                                 ) {
 
                                     Icon(
-                                        imageVector =
-                                            GastifyIcons.category(
-                                                category?.icon ?: ""
-                                            ),
-                                        contentDescription = null,
-                                        tint = PrimaryGreen,
-                                        modifier = Modifier.size(25.dp)
+                                        imageVector = GastifyIcons.edit,
+                                        contentDescription = "Editar acceso",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -386,9 +485,14 @@ fun QuickActionsSection(
                             Spacer(Modifier.height(6.dp))
 
                             Text(
-                                text = quickMoney(
-                                    action.amountCents
-                                ),
+                                text = if (
+                                    action.type ==
+                                    MovementType.INCOME.name
+                                ) {
+                                    "+${quickMoney(action.amountCents)}"
+                                } else {
+                                    "-${quickMoney(action.amountCents)}"
+                                },
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (
@@ -416,7 +520,7 @@ fun QuickActionsSection(
 
                             Button(
                                 onClick = {
-                                    confirmingAction = action
+                                    handleRegisterClick(action)
                                 },
                                 enabled = !isSaving &&
                                     validReferences,
@@ -428,48 +532,23 @@ fun QuickActionsSection(
                                 )
                             ) {
 
+                                if (isBiometricAvailable) {
+
+                                    Icon(
+                                        imageVector = GastifyIcons.fingerprint,
+                                        contentDescription = "Confirmar con huella",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = AmoledBlack
+                                    )
+
+                                    Spacer(Modifier.width(6.dp))
+                                }
+
                                 Text(
                                     text = "Registrar",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement =
-                                    Arrangement.SpaceBetween
-                            ) {
-
-                                IconButton(
-                                    onClick = {
-                                        openEditor(action)
-                                    },
-                                    enabled = !isSaving
-                                ) {
-
-                                    Icon(
-                                        imageVector = GastifyIcons.edit,
-                                        contentDescription = "Editar",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        deletingAction = action
-                                    },
-                                    enabled = !isSaving
-                                ) {
-
-                                    Icon(
-                                        imageVector = GastifyIcons.delete,
-                                        contentDescription = "Eliminar",
-                                        tint = ExpenseRed,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
                             }
                         }
                     }
@@ -508,14 +587,43 @@ fun QuickActionsSection(
             containerColor = SurfaceDark,
             title = {
 
-                Text(
-                    text = if (editingAction == null) {
-                        "Nuevo acceso rápido"
-                    } else {
-                        "Editar acceso rápido"
-                    },
-                    color = TextPrimary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.SpaceBetween,
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = if (editingAction == null) {
+                            "Nuevo acceso rápido"
+                        } else {
+                            "Editar acceso rápido"
+                        },
+                        color = TextPrimary
+                    )
+
+                    if (editingAction != null) {
+
+                        IconButton(
+                            onClick = {
+                                val toDelete = editingAction
+                                showEditor = false
+                                deletingAction = toDelete
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+
+                            Icon(
+                                imageVector = GastifyIcons.delete,
+                                contentDescription = "Eliminar acceso directo",
+                                tint = ExpenseRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             },
             text = {
 

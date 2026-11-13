@@ -24,6 +24,7 @@ object GastifyIcons {
     val delete: ImageVector = Icons.Outlined.DeleteOutline
     val logout: ImageVector = Icons.Outlined.Logout
     val expand: ImageVector = Icons.Outlined.ExpandMore
+    val fingerprint: ImageVector = Icons.Outlined.Fingerprint
 
     // FINANZAS
 
