@@ -1,0 +1,90 @@
+[versions]
+
+# Android
+agp = "9.5.1"
+kotlin = "2.4.21"
+
+# AndroidX
+coreKtx = "1.10.1"
+lifecycleRuntimeKtx = "2.6.1"
+activityCompose = "1.8.0"
+
+# Jetpack Compose
+composeBom = "2026.02.01"
+
+# Firebase
+firebaseBom = "35.1.0"
+googleServices = "4.5.0"
+
+# Testing
+junit = "4.13.2"
+junitVersion = "1.1.5"
+espressoCore = "3.5.1"
+
+
+[libraries]
+
+# ==============================
+# ANDROID CORE
+# ==============================
+
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+
+
+# ==============================
+# JETPACK COMPOSE
+# ==============================
+
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+
+# ==============================
+# FIREBASE
+# ==============================
+
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
+
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
+
+
+# ==============================
+# TESTING
+# ==============================
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+
+
+[plugins]
+
+# Android
+android-application = { id = "com.android.application", version.ref = "agp" }
+
+# Kotlin Compose
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+
+# Firebase
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

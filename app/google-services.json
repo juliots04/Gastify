@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "295804706670",
+    "project_id": "gastify-c804b",
+    "storage_bucket": "gastify-c804b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295804706670:android:ec335a0ec402dec633eb7f",
+        "android_client_info": {
+          "package_name": "com.example.gastify"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "295804706670-alvohbju63cbj3sbd5f1m19a47cgkc5b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.gastify",
+            "certificate_hash": "be5055a24a714a74b033a033953bd5a4dc66a975"
+          }
+        },
+        {
+          "client_id": "295804706670-m9c3h1apb38blaslu9s0o9s54hlfdu90.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBX6XPMvIzrI0y3QWlnnufCSFrM1XeDvWY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "295804706670-m9c3h1apb38blaslu9s0o9s54hlfdu90.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
