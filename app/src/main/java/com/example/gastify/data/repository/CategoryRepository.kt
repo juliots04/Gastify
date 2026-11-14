@@ -90,7 +90,7 @@ class CategoryRepository(
             "createdAt" to FieldValue.serverTimestamp()
         )
 
-        awaitWrite(
+awaitWrite(
             collection.add(data)
         )
     }

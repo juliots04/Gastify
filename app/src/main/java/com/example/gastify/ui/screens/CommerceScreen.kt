@@ -27,6 +27,7 @@ import com.example.gastify.data.model.CommerceOperationType
 import com.example.gastify.data.model.CommerceRequest
 import com.example.gastify.data.model.InventoryProduct
 import com.example.gastify.data.model.Workspace
+import com.example.gastify.ui.components.rememberPreferredAccount
 import com.example.gastify.ui.components.GastifyIcons
 import com.example.gastify.ui.theme.*
 import com.example.gastify.viewmodel.AccountViewModel
@@ -79,6 +80,7 @@ fun CommerceScreen(
 
     val inventoryState by inventoryVm.uiState.collectAsState()
     val accountState by accountVm.uiState.collectAsState()
+    val (preferredAccountId) = rememberPreferredAccount(userId, workspace.id)
     val categoryState by categoryVm.uiState.collectAsState()
     val commerceState by commerceVm.uiState.collectAsState()
 
@@ -140,7 +142,7 @@ fun CommerceScreen(
     }
     LaunchedEffect(accountState.accounts) {
         if (accountState.accounts.none { it.id == accountId }) {
-            accountId = accountState.accounts.firstOrNull()?.id.orEmpty()
+            accountId = (accountState.accounts.firstOrNull { it.id == preferredAccountId } ?: accountState.accounts.firstOrNull())?.id.orEmpty()
         }
     }
     LaunchedEffect(typeName, categoryState.categories) {
@@ -318,8 +320,7 @@ fun CommerceScreen(
                         }
                         Button(
                             onClick = {
-                                if (canConfirm && quantity != null && unitPrice != null &&
-                                    product != null && account != null && category != null) {
+                                if (canConfirm && quantity != null && unitPrice != null) {
                                     confirmation = CommerceRequest(
                                         type = type,
                                         productId = product.id,

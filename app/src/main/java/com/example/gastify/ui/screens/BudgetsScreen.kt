@@ -1,19 +1,25 @@
 package com.example.gastify.ui.screens
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.MoreVert
 
 import androidx.compose.material3.*
 
@@ -22,6 +28,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -43,11 +51,23 @@ import com.example.gastify.data.repository.BudgetCloudRepository
 
 import com.example.gastify.notifications.BudgetAlertWorker
 
+import com.example.gastify.ui.components.GlassOptionsMenu
+import com.example.gastify.ui.components.GlassOptionsItem
+import com.example.gastify.ui.components.GlassOptionsDivider
+import com.example.gastify.ui.components.BalanceSummaryCard
 import com.example.gastify.ui.components.GastifyIcons
 import com.example.gastify.ui.theme.*
 
 import com.example.gastify.viewmodel.CategoryViewModel
 import com.example.gastify.viewmodel.StatisticsViewModel
+
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 
 import kotlinx.coroutines.launch
 
@@ -562,20 +582,19 @@ fun BudgetsScreen(
 
         } ?: BudgetPeriod.MONTHLY
 
-    val range = remember(selectedPeriod) {
-
-        budgetPeriodRange(
-            selectedPeriod
-        )
+    val periodRanges = remember(workspace.id) {
+        BudgetPeriod.entries.associateWith { budgetPeriodRange(it) }
     }
-
+    val range = periodRanges.getValue(selectedPeriod)
+    val queryStart = periodRanges.values.minOf { it.first }
+    val queryEnd = periodRanges.values.maxOf { it.second }
     // ======================================
     // VIEWMODELS EXISTENTES
     // ======================================
 
     val statisticsVm: StatisticsViewModel = viewModel(
 
-        key = "statistics_${userId}_${workspace.id}",
+        key = "budget_statistics_${userId}_${workspace.id}",
 
         factory = StatisticsViewModel.factory(
             userId,
@@ -603,13 +622,13 @@ fun BudgetsScreen(
 
     DisposableEffect(
         statisticsVm,
-        range.first,
-        range.second
+        queryStart,
+        queryEnd
     ) {
 
         statisticsVm.startListening(
-            range.first,
-            range.second
+            queryStart,
+            queryEnd
         )
 
         onDispose {
@@ -654,37 +673,28 @@ fun BudgetsScreen(
     // MOVIMIENTOS DEL PERÍODO
     // ======================================
 
-    val expenses = statisticsState.movements.filter {
-
-        it.type == "EXPENSE"
-    }
-
-    val totalExpense = expenses.sumOf {
-
-        it.amountCents
-    }
-
-    fun spentForBudget(
-        budget: Budget
-    ): Long {
-
-        return if (budget.categoryId.isEmpty()) {
-
-            totalExpense
-
-        } else {
-
-            expenses.filter {
-
-                it.categoryId == budget.categoryId
-
-            }.sumOf {
-
-                it.amountCents
+    val totalsByPeriod = remember(statisticsState.movements, periodRanges) {
+        val totals = BudgetPeriod.entries.associateWith { 0L }.toMutableMap()
+        val categories = BudgetPeriod.entries.associateWith { mutableMapOf<String, Long>() }
+        statisticsState.movements.forEach { movement ->
+            val timestamp = movement.createdAt?.toDate()?.time
+            if (movement.type == "EXPENSE" && timestamp != null) {
+                periodRanges.forEach { (period, bounds) ->
+                    if (timestamp >= bounds.first && timestamp < bounds.second) {
+                        totals[period] = totals.getValue(period) + movement.amountCents
+                        val byCategory = categories.getValue(period)
+                        byCategory[movement.categoryId] = (byCategory[movement.categoryId] ?: 0L) + movement.amountCents
+                    }
+                }
             }
         }
+        BudgetPeriod.entries.associateWith { period -> totals.getValue(period) to categories.getValue(period) }
     }
+    val expenseTotals = totalsByPeriod.getValue(selectedPeriod)
+    val totalExpense = expenseTotals.first
 
+    fun spentForBudget(budget: Budget): Long =
+        if (budget.categoryId.isEmpty()) totalExpense else expenseTotals.second[budget.categoryId] ?: 0L
     val exceededCount = visibleBudgets.count {
 
         spentForBudget(it) >= it.limitCents
@@ -710,6 +720,8 @@ fun BudgetsScreen(
         mutableStateOf<String?>(null)
     }
 
+    var editorPeriodName by rememberSaveable { mutableStateOf(BudgetPeriod.MONTHLY.name) }
+
     var selectedCategoryId by rememberSaveable {
         mutableStateOf("")
     }
@@ -731,6 +743,7 @@ fun BudgetsScreen(
     ) {
 
         editingId = budget?.id
+        editorPeriodName = budget?.period ?: selectedPeriod.name
 
         selectedCategoryId =
             budget?.categoryId ?: ""
@@ -773,7 +786,7 @@ fun BudgetsScreen(
             showEditor = false
 
             showMessage(
-                "Presupuesto guardado. Se sincronizará con Firebase."
+                "Presupuesto guardado."
             )
 
         } catch (exception: Exception) {
@@ -849,16 +862,31 @@ fun BudgetsScreen(
     // INTERFAZ AMOLED
     // ======================================
 
+    val glassState = rememberHazeState()
+    val backgroundGlassState = rememberHazeState()
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val listState = rememberLazyListState()
+    val fadeDistance = with(LocalDensity.current) { 100.dp.toPx() }
+    val headerAlpha = if (listState.firstVisibleItemIndex > 0) 1f else
+        (listState.firstVisibleItemScrollOffset / fadeDistance).coerceIn(0f, 1f)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(AmoledBlack)
     ) {
 
+        Box(Modifier.fillMaxSize().hazeSource(glassState)) {
+        Box(Modifier.fillMaxSize().hazeSource(backgroundGlassState).background(AmoledBlack)) {
+            AccountsLightsBackground(Modifier.fillMaxSize())
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
 
+            state = listState,
             contentPadding = PaddingValues(
+                top = statusBarHeight + 76.dp,
                 start = 20.dp,
                 end = 20.dp,
                 bottom = 32.dp
@@ -868,183 +896,6 @@ fun BudgetsScreen(
                 14.dp
             )
         ) {
-
-            // ==================================
-            // ENCABEZADO
-            // ==================================
-
-            item {
-
-                Spacer(Modifier.height(16.dp))
-
-                TextButton(
-                    onClick = onBack
-                ) {
-
-                    Icon(
-                        imageVector = GastifyIcons.back,
-                        contentDescription = null
-                    )
-
-                    Spacer(Modifier.width(6.dp))
-
-                    Text("Volver")
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    Icon(
-                        imageVector =
-                            Icons.Outlined.AccountBalanceWallet,
-
-                        contentDescription = null,
-
-                        tint = PrimaryGreen,
-
-                        modifier = Modifier.size(30.dp)
-                    )
-
-                    Spacer(Modifier.width(12.dp))
-
-                    Text(
-                        text = "Presupuestos",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    text = workspace.name,
-                    color = TextSecondary,
-                    fontSize = 14.sp
-                )
-
-                Spacer(Modifier.height(22.dp))
-            }
-
-            // ==================================
-            // ESTADO DE SINCRONIZACIÓN
-            // ==================================
-
-            item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-
-                    shape = RoundedCornerShape(16.dp),
-
-                    colors = CardDefaults.cardColors(
-                        containerColor = SurfaceDark
-                    )
-                ) {
-
-                    Row(
-                        modifier = Modifier.padding(18.dp),
-
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-                        Icon(
-                            imageVector = if (
-                                migrated &&
-                                remoteReady &&
-                                !remoteFromCache &&
-                                !remotePendingWrites
-                            ) {
-
-                                Icons.Outlined.CloudDone
-
-                            } else {
-
-                                Icons.Outlined.CloudOff
-                            },
-
-                            contentDescription = null,
-
-                            tint = if (
-                                migrated &&
-                                remoteReady &&
-                                !remoteFromCache &&
-                                !remotePendingWrites
-                            ) {
-
-                                PrimaryGreen
-
-                            } else {
-
-                                BudgetWarningColor
-                            },
-
-                            modifier = Modifier.size(25.dp)
-                        )
-
-                        Spacer(Modifier.width(12.dp))
-
-                        Column(
-                            modifier = Modifier.weight(1f)
-                        ) {
-
-                            Text(
-                                text = when {
-
-                                    !migrated ->
-                                        "Migración pendiente"
-
-                                    remotePendingWrites ->
-                                        "Sincronizando cambios"
-
-                                    !remoteReady ->
-                                        "Conectando con Firebase"
-
-                                    remoteFromCache ->
-                                        "Mostrando datos locales"
-
-                                    else ->
-                                        "Sincronizado con Firebase"
-                                },
-
-                                fontWeight = FontWeight.SemiBold,
-
-                                color = TextPrimary,
-
-                                fontSize = 14.sp
-                            )
-
-                            Spacer(Modifier.height(5.dp))
-
-                            Text(
-                                text = when {
-
-                                    !migrated ->
-                                        "Se necesita conexión para migrar los presupuestos anteriores."
-
-                                    remotePendingWrites ->
-                                        "Tus cambios están pendientes de confirmación."
-
-                                    remoteFromCache ->
-                                        "Los datos se actualizarán al recuperar internet."
-
-                                    else ->
-                                        "Tus presupuestos están disponibles en la nube."
-                                },
-
-                                color = TextSecondary,
-
-                                fontSize = 12.sp,
-
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
-                }
-            }
 
             // ==================================
             // ERROR DE FIREBASE
@@ -1102,44 +953,31 @@ fun BudgetsScreen(
             // ==================================
 
             item {
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    text = "Período",
-                    color = TextSecondary,
-                    fontSize = 14.sp
-                )
-
+                Text("Período", color = TextSecondary, fontSize = 14.sp)
                 Spacer(Modifier.height(10.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(
-                        8.dp
-                    )
+                BoxWithConstraints(
+                    modifier = Modifier.widthIn(max = 270.dp).fillMaxWidth().height(40.dp)
+                        .clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.08f))
                 ) {
-
-                    BudgetPeriod.entries.forEach { period ->
-
-                        FilterChip(
-                            selected = selectedPeriod == period,
-
-                            onClick = {
-
-                                selectedPeriodName = period.name
-                            },
-
-                            label = {
-
-                                Text(
-                                    budgetPeriodName(period)
-                                )
+                    val options = listOf(BudgetPeriod.MONTHLY, BudgetPeriod.WEEKLY, BudgetPeriod.DAILY)
+                    val segmentWidth = maxWidth / options.size
+                    val indicatorOffset by animateDpAsState(
+                        targetValue = segmentWidth * options.indexOf(selectedPeriod),
+                        animationSpec = tween(durationMillis = 280), label = "period indicator"
+                    )
+                    Box(Modifier.offset(x = indicatorOffset).width(segmentWidth).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.18f)))
+                    Row(Modifier.fillMaxSize()) {
+                        options.forEach { period ->
+                            Box(
+                                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { selectedPeriodName = period.name },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(budgetPeriodName(period), color = if (period == selectedPeriod) Color.White else TextSecondary, fontSize = 12.sp, fontWeight = if (period == selectedPeriod) FontWeight.SemiBold else FontWeight.Normal)
                             }
-                        )
+                        }
                     }
                 }
             }
-
             // ==================================
             // CARGANDO GASTOS
             // ==================================
@@ -1173,59 +1011,18 @@ fun BudgetsScreen(
 
                 item {
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-
-                        shape = RoundedCornerShape(24.dp),
-
-                        colors = CardDefaults.cardColors(
-                            containerColor = SurfaceDark
-                        )
+                    BalanceSummaryCard(
+                        title = "Gastos del período",
+                        amount = budgetMoney(totalExpense),
+                        backgroundState = backgroundGlassState
                     ) {
-
-                        Column(
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-
-                            Text(
-                                text = "Gastos del período",
-
-                                color = TextSecondary,
-
-                                fontSize = 13.sp
-                            )
-
-                            Spacer(Modifier.height(12.dp))
-
-                            Text(
-                                text = budgetMoney(totalExpense),
-
-                                fontSize = 32.sp,
-
-                                fontWeight = FontWeight.Bold,
-
-                                color = ExpenseRed
-                            )
-
-                            Spacer(Modifier.height(16.dp))
-
-                            HorizontalDivider(
-                                color = BorderDark
-                            )
-
-                            Spacer(Modifier.height(16.dp))
-
-                            Text(
-                                text = "${visibleBudgets.size} presupuestos configurados",
-
-                                color = TextSecondary,
-
-                                fontSize = 12.sp
-                            )
-                        }
+                        Text(
+                            text = "${visibleBudgets.size} presupuestos configurados",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
                     }
                 }
-
                 // ==================================
                 // ALERTAS VISUALES
                 // ==================================
@@ -1299,41 +1096,6 @@ fun BudgetsScreen(
 
                 item {
 
-                    Button(
-                        onClick = {
-
-                            openEditor(null)
-                        },
-
-                        enabled = migrated,
-
-                        modifier = Modifier.fillMaxWidth(),
-
-                        shape = RoundedCornerShape(16.dp),
-
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryGreen,
-                            contentColor = AmoledBlack
-                        ),
-
-                        contentPadding = PaddingValues(16.dp)
-                    ) {
-
-                        Icon(
-                            imageVector = GastifyIcons.add,
-                            contentDescription = null
-                        )
-
-                        Spacer(Modifier.width(8.dp))
-
-                        Text(
-                            text = "Nuevo presupuesto",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
                     Text(
                         text = "Mis presupuestos",
 
@@ -1390,6 +1152,7 @@ fun BudgetsScreen(
                             }
 
                         CloudBudgetCard(
+                            glassState = glassState,
                             budget = budget,
 
                             category = category,
@@ -1418,7 +1181,7 @@ fun BudgetsScreen(
                 item {
 
                     Text(
-                        text = "Los presupuestos se renuevan al comenzar un nuevo período. Los importes gastados se consultan desde Firebase.",
+                        text = "Los presupuestos se renuevan al comenzar un nuevo período.",
 
                         color = TextSecondary,
 
@@ -1430,6 +1193,35 @@ fun BudgetsScreen(
             }
         }
 
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(statusBarHeight + 64.dp)
+                .background(AmoledBlack.copy(alpha = headerAlpha))
+                .padding(start = 12.dp, end = 12.dp, top = statusBarHeight),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(GastifyIcons.back, contentDescription = "Volver", tint = Color.White, modifier = Modifier.size(30.dp))
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp, end = 8.dp)) {
+                Text("Mis presupuestos", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(workspace.name, fontSize = 13.sp, color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Button(
+                onClick = { openEditor(null) }, enabled = migrated,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White,
+                    disabledContainerColor = Color.White.copy(alpha = 0.08f), disabledContentColor = Color.White.copy(alpha = 0.4f)
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Icon(GastifyIcons.add, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Agregar", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
         SnackbarHost(
             hostState = snackbar,
 
@@ -1459,9 +1251,10 @@ fun BudgetsScreen(
                 it.id == selectedCategoryId
             }
 
-        val alreadyExists = visibleBudgets.any {
+        val alreadyExists = budgets.any {
 
             it.categoryId == selectedCategoryId &&
+                it.period == editorPeriodName &&
                 it.id != editingId
         }
 
@@ -1505,18 +1298,19 @@ fun BudgetsScreen(
                         )
                 ) {
 
-                    Text(
-                        text = "Período: ${
-                            budgetPeriodName(selectedPeriod)
-                        }",
-
-                        color = PrimaryGreen,
-
-                        fontWeight = FontWeight.SemiBold
-                    )
-
+                    Text("Período", fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(BudgetPeriod.MONTHLY, BudgetPeriod.WEEKLY, BudgetPeriod.DAILY).forEach { period ->
+                            FilterChip(
+                                selected = editorPeriodName == period.name,
+                                onClick = { editorPeriodName = period.name },
+                                enabled = editingBudget == null,
+                                label = { Text(budgetPeriodName(period), fontSize = 12.sp) }
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(20.dp))
-
                     Text(
                         text = "Aplicar límite a",
 
@@ -1591,17 +1385,6 @@ fun BudgetsScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
-                    Text(
-                        text = "Los cambios se guardarán en Firebase y se reflejarán en tus otros dispositivos.",
-
-                        color = TextSecondary,
-
-                        fontSize = 12.sp,
-
-                        lineHeight = 18.sp
-                    )
                 }
             },
 
@@ -1616,10 +1399,11 @@ fun BudgetsScreen(
 
                             val budgetId = editingId
                                 ?: repository.documentId(
-                                    selectedPeriod.name,
+                                    editorPeriodName,
                                     selectedCategoryId
                                 )
 
+                            selectedPeriodName = editorPeriodName
                             saveBudget(
                                 Budget(
                                     id = budgetId,
@@ -1630,7 +1414,7 @@ fun BudgetsScreen(
 
                                     categoryId = selectedCategoryId,
 
-                                    period = selectedPeriod.name,
+                                    period = editorPeriodName,
 
                                     limitCents = amount
                                 )
@@ -1736,6 +1520,7 @@ fun BudgetsScreen(
 @Composable
 private fun CloudBudgetCard(
     budget: Budget,
+    glassState: HazeState,
     category: Category?,
     spentCents: Long,
     daysRemaining: Int,
@@ -1743,340 +1528,110 @@ private fun CloudBudgetCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-
-    val progress = spentCents.toDouble() /
-        budget.limitCents.toDouble()
-
-    val fraction = progress
-        .toFloat()
-        .coerceIn(0f, 1f)
-
-    val percentage = progress * 100.0
-
-    val remaining = (
-        budget.limitCents - spentCents
-    ).coerceAtLeast(0L)
-
-    val exceeded = (
-        spentCents - budget.limitCents
-    ).coerceAtLeast(0L)
-
+    val progress = spentCents.toDouble() / budget.limitCents.toDouble()
+    val fraction = progress.toFloat().coerceIn(0f, 1f)
+    val remaining = (budget.limitCents - spentCents).coerceAtLeast(0L)
+    val exceeded = (spentCents - budget.limitCents).coerceAtLeast(0L)
     val statusColor = when {
-
         progress >= 1.0 -> ExpenseRed
-
         progress >= 0.80 -> BudgetWarningColor
-
         else -> PrimaryGreen
     }
+    var menuExpanded by remember(budget.id) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-
-        shape = RoundedCornerShape(22.dp),
-
-        colors = CardDefaults.cardColors(
-            containerColor = SurfaceDark
-        )
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.06f))
     ) {
-
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Surface(
-                    color = CardDark,
-
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-
-                    Box(
-                        modifier = Modifier.size(48.dp),
-
-                        contentAlignment = Alignment.Center
-                    ) {
-
+        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 14.dp, bottom = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = statusColor.copy(alpha = 0.14f), shape = RoundedCornerShape(14.dp)) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (
-                                budget.categoryId.isEmpty()
-                            ) {
-
-                                GastifyIcons.accounts
-
-                            } else {
-
-                                GastifyIcons.category(
-                                    category?.icon ?: ""
-                                )
-                            },
-
+                            imageVector = if (budget.categoryId.isEmpty()) GastifyIcons.accounts else GastifyIcons.category(category?.icon.orEmpty()),
                             contentDescription = null,
-
-                            tint = PrimaryGreen,
-
-                            modifier = Modifier.size(26.dp)
+                            tint = statusColor,
+                            modifier = Modifier.size(25.dp)
                         )
                     }
                 }
-
                 Spacer(Modifier.width(12.dp))
-
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = if (
-                            budget.categoryId.isEmpty()
-                        ) {
-
-                            "Presupuesto general"
-
-                        } else {
-
-                            category?.name
-                                ?: "Categoría no disponible"
-                        },
-
-                        fontSize = 17.sp,
-
-                        fontWeight = FontWeight.SemiBold,
-
-                        color = TextPrimary,
-
-                        maxLines = 1,
-
-                        overflow = TextOverflow.Ellipsis
+                        text = if (budget.categoryId.isEmpty()) "Presupuesto general" else category?.name ?: "Categoría no disponible",
+                        color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
-
-                    Spacer(Modifier.height(6.dp))
-
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = when (budget.period) {
-
-                            BudgetPeriod.DAILY.name ->
-                                "Diario"
-
-                            BudgetPeriod.WEEKLY.name ->
-                                "Semanal"
-
-                            else ->
-                                "Mensual"
+                            BudgetPeriod.DAILY.name -> "Diario"
+                            BudgetPeriod.WEEKLY.name -> "Semanal"
+                            else -> "Mensual"
                         },
-
-                        color = TextSecondary,
-
-                        fontSize = 12.sp
+                        color = TextSecondary, fontSize = 12.sp
                     )
                 }
-
-                Icon(
-                    imageVector =
-                        Icons.Outlined.NotificationsActive,
-
-                    contentDescription = null,
-
-                    tint = statusColor
-                )
+                Box {
+                    IconButton(onClick = { menuExpanded = true }, enabled = actionsEnabled, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = "Más opciones", tint = Color.White)
+                    }
+                    GlassOptionsMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }, glassState = glassState) {
+                        GlassOptionsItem("Editar presupuesto", GastifyIcons.edit, onClick = { menuExpanded = false; onEdit() })
+                        GlassOptionsDivider()
+                        GlassOptionsItem("Eliminar presupuesto", GastifyIcons.delete, onClick = { menuExpanded = false; onDelete() }, destructive = true)
+                    }
+                }
             }
-
-            Spacer(Modifier.height(22.dp))
-
-            Text(
-                text = "Gastado",
-
-                fontSize = 12.sp,
-
-                color = TextSecondary
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = budgetMoney(spentCents),
-
-                fontSize = 27.sp,
-
-                fontWeight = FontWeight.Bold,
-
-                color = TextPrimary
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            Text(
-                text = "Límite: ${
-                    budgetMoney(budget.limitCents)
-                }",
-
-                color = TextSecondary,
-
-                fontSize = 13.sp
-            )
-
-            Spacer(Modifier.height(18.dp))
-
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("Gastado", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(budgetMoney(spentCents), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Límite", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(budgetMoney(budget.limitCents), color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
             LinearProgressIndicator(
-                progress = {
-                    fraction
-                },
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp),
-
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth().padding(end = 6.dp).height(8.dp),
                 color = statusColor,
-
                 trackColor = BorderDark
             )
-
             Spacer(Modifier.height(10.dp))
-
-            Text(
-                text = String.format(
-                    Locale.US,
-                    "%.1f%% utilizado",
-                    percentage
-                ),
-
-                color = statusColor,
-
-                fontWeight = FontWeight.SemiBold,
-
-                fontSize = 13.sp
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                text = when {
-
-                    progress >= 1.0 ->
-                        "Límite alcanzado o superado."
-
-                    progress >= 0.90 ->
-                        "Alerta: superaste el 90%."
-
-                    progress >= 0.80 ->
-                        "Atención: superaste el 80%."
-
-                    else ->
-                        "Dentro del presupuesto."
-                },
-
-                color = statusColor,
-
-                fontSize = 12.sp
-            )
-
-            Spacer(Modifier.height(18.dp))
-
-            HorizontalDivider(
-                color = BorderDark
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                text = if (exceeded > 0L) {
-
-                    "Excedido por ${
-                        budgetMoney(exceeded)
-                    }"
-
-                } else {
-
-                    "Disponible: ${
-                        budgetMoney(remaining)
-                    }"
-                },
-
-                fontSize = 17.sp,
-
-                fontWeight = FontWeight.Bold,
-
-                color = if (exceeded > 0L) {
-                    ExpenseRed
-                } else {
-                    PrimaryGreen
-                }
-            )
-
-            if (
-                budget.period !=
-                BudgetPeriod.DAILY.name
-            ) {
-
-                Spacer(Modifier.height(12.dp))
-
+            Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(String.format(Locale.US, "%.1f%% utilizado", progress * 100.0), color = statusColor, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Text(
-                    text = "Gasto diario sugerido: ${
-                        budgetMoney(
-                            remaining / daysRemaining
-                        )
-                    }",
-
-                    color = TextSecondary,
-
-                    fontSize = 12.sp
+                    text = when {
+                        progress >= 1.0 -> "Límite alcanzado"
+                        progress >= 0.90 -> "Más del 90%"
+                        progress >= 0.80 -> "Más del 80%"
+                        else -> "En orden"
+                    },
+                    color = statusColor, fontSize = 12.sp
                 )
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            Row {
-
-                TextButton(
-                    enabled = actionsEnabled,
-
-                    onClick = onEdit
-                ) {
-
-                    Icon(
-                        imageVector = GastifyIcons.edit,
-
-                        contentDescription = null,
-
-                        modifier = Modifier.size(18.dp)
-                    )
-
-                    Spacer(Modifier.width(5.dp))
-
-                    Text("Editar")
-                }
-
-                TextButton(
-                    enabled = actionsEnabled,
-
-                    onClick = onDelete
-                ) {
-
-                    Icon(
-                        imageVector = GastifyIcons.delete,
-
-                        contentDescription = null,
-
-                        tint = ExpenseRed,
-
-                        modifier = Modifier.size(18.dp)
-                    )
-
-                    Spacer(Modifier.width(5.dp))
-
-                    Text(
-                        text = "Eliminar",
-                        color = ExpenseRed
-                    )
-                }
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (exceeded > 0L) "Excedido" else "Disponible", color = TextSecondary, fontSize = 12.sp)
+                Text(budgetMoney(if (exceeded > 0L) exceeded else remaining), color = if (exceeded > 0L) ExpenseRed else PrimaryGreen, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            if (budget.period != BudgetPeriod.DAILY.name) {
+                Spacer(Modifier.height(8.dp))
+                Text("Gasto diario sugerido: ${budgetMoney(remaining / daysRemaining)}", color = TextSecondary, fontSize = 12.sp)
             }
         }
     }
 }
-
 // ==========================================
 // SELECTOR DE CATEGORÍAS
 // ==========================================

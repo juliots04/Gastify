@@ -449,7 +449,7 @@ service cloud.firestore {
             workspaceId,
             request.resource.data.accountId
           )
-        ).data.lastMovementId == movementId;
+         ).data.lastMovementId == movementId;
 
       allow update: if false;
 

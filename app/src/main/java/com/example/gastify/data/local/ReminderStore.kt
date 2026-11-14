@@ -184,14 +184,13 @@ class ReminderStore(
             "Selecciona al menos un día válido."
         }
 
-        val reminders = getAll()
-            .filterNot {
-                it.id == reminder.id
-            }
-            .toMutableList()
-
-        reminders.add(reminder)
-
+        val reminders = getAll().toMutableList()
+        val existingIndex = reminders.indexOfFirst { it.id == reminder.id }
+        if (existingIndex >= 0) {
+            reminders[existingIndex] = reminder
+        } else {
+            reminders.add(reminder)
+        }
         saveAll(reminders)
     }
 

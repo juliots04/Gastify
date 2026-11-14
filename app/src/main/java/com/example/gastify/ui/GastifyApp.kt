@@ -3,6 +3,15 @@ package com.example.gastify.ui
 import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
@@ -383,6 +392,9 @@ fun GastifyApp(
     // SECCIÓN ACTUAL
     // ======================================
 
+    var settingsPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var settingsReturnSection by rememberSaveable { mutableStateOf(MainSection.HOME.name) }
+
     val currentSection = MainSection.entries
         .firstOrNull {
 
@@ -434,6 +446,9 @@ fun GastifyApp(
     ) {
 
         when {
+            currentSection == MainSection.SETTINGS && settingsPage != null -> { settingsPage = null }
+            currentSection == MainSection.SETTINGS -> { selectedSection = settingsReturnSection }
+
 
             openedWorkspace != null -> {
 
@@ -525,11 +540,14 @@ fun GastifyApp(
     val inSubscreen =
         openedWorkspace != null ||
             openedMovementWorkspace != null ||
-            openedStatisticsWorkspace != null
+            openedStatisticsWorkspace != null ||
+            currentSection == MainSection.SETTINGS
 
     // ======================================
     // INTERFAZ PRINCIPAL
     // ======================================
+
+    val accountsEdgeToEdge = openedWorkspace != null && currentWorkspaceSection in listOf(WorkspaceSection.ACCOUNTS, WorkspaceSection.CATEGORIES, WorkspaceSection.REMINDERS, WorkspaceSection.BUDGETS)
 
     Scaffold(
 
@@ -562,7 +580,7 @@ fun GastifyApp(
 
                     ) {
 
-                        MainSection.entries.forEach {
+                        MainSection.entries.filter { it != MainSection.SETTINGS }.forEach {
                                 section ->
 
                             NavigationBarItem(
@@ -636,7 +654,7 @@ fun GastifyApp(
 
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(if (accountsEdgeToEdge) PaddingValues(bottom = innerPadding.calculateBottomPadding()) else innerPadding)
 
         ) {
 
@@ -654,7 +672,7 @@ fun GastifyApp(
 
             if (!inSubscreen) {
 
-                GastifyHeader()
+                GastifyHeader(photoUrl = FirebaseAuth.getInstance().currentUser?.photoUrl?.toString(), onOpenAccount = { settingsPage = null; settingsReturnSection = selectedSection; selectedSection = MainSection.SETTINGS.name })
             }
 
             // ==============================
@@ -698,6 +716,10 @@ fun GastifyApp(
                                 workspace = openedWorkspace,
 
                                 onBack = {
+                                    selectedWorkspaceId = null
+                                },
+                                onOpenMovements = {
+                                    selectedMovementWorkspaceId = openedWorkspace.id
                                     selectedWorkspaceId = null
                                 }
                             )
@@ -841,9 +863,7 @@ fun GastifyApp(
                                         workspaceId
 
                                     if (
-                                        workspaceId != null &&
-                                        workspaceId in
-                                            availableWorkspaceIds
+                                        workspaceId in availableWorkspaceIds
                                     ) {
 
                                         recordWorkspaceUsage(
@@ -1122,6 +1142,10 @@ fun GastifyApp(
 
                                 modifier =
                                     Modifier.fillMaxSize(),
+
+                                page = settingsPage,
+                                onOpenPage = { settingsPage = it },
+                                onBack = { if (settingsPage != null) settingsPage = null else selectedSection = settingsReturnSection },
 
                                 userId = userId,
 
@@ -1455,6 +1479,9 @@ private fun WorkspacePicker(
 @Composable
 private fun SettingsScreen(
     modifier: Modifier = Modifier,
+    page: String?,
+    onOpenPage: (String) -> Unit,
+    onBack: () -> Unit,
     userId: String,
     workspaces: List<Workspace>,
     preferences: AppPreferences,
@@ -1462,161 +1489,51 @@ private fun SettingsScreen(
     onPreferencesChanged: (AppPreferences) -> Unit,
     onSignOut: () -> Unit
 ) {
+    Column(modifier = modifier.background(AmoledBlack)) {
+        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(GastifyIcons.back, contentDescription = "Volver", tint = Color.White) }
+            Text(page ?: "Cuenta", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
+            when (page) {
+                "Perfil" -> ProfileSettingsSection(userId = userId)
+                "Notificaciones" -> NotificationSettingsSection(userId = userId)
+                "Preferencias" -> AppPreferencesSection(workspaces = workspaces, preferences = preferences, store = preferencesStore, onPreferencesChanged = onPreferencesChanged)
+                else -> {
+                    Text("Configuración de la cuenta", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 18.dp))
+                    AccountSettingsRow("Perfil", "Información de tu cuenta", Icons.Outlined.Person) { onOpenPage("Perfil") }
+                    Spacer(Modifier.height(10.dp))
+                    AccountSettingsRow("Notificaciones", "Administra tus avisos", Icons.Outlined.Notifications) { onOpenPage("Notificaciones") }
+                    Spacer(Modifier.height(10.dp))
+                    AccountSettingsRow("Preferencias", "Personaliza la aplicación", Icons.Outlined.Tune) { onOpenPage("Preferencias") }
+                    Spacer(Modifier.height(24.dp))
+                    OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                        Icon(GastifyIcons.logout, contentDescription = null, tint = ExpenseRed)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cerrar sesión", color = ExpenseRed, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
 
-    Column(
-
-        modifier = modifier
-            .verticalScroll(
-                rememberScrollState()
-            )
-            .padding(24.dp)
-
+@Composable
+private fun AccountSettingsRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.06f)).clickable(onClick = onClick).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-
-        Spacer(
-            Modifier.height(16.dp)
-        )
-
-        Row(
-
-            verticalAlignment =
-                Alignment.CenterVertically
-
-        ) {
-
-            Icon(
-
-                imageVector =
-                    GastifyIcons.settings,
-
-                contentDescription = null,
-
-                tint = PrimaryGreen
-            )
-
-            Spacer(
-                Modifier.width(10.dp)
-            )
-
-            Text(
-
-                text = "Configuración",
-
-                fontSize = 28.sp,
-
-                fontWeight = FontWeight.Bold
-            )
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)).background(PrimaryGreen.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = PrimaryGreen, modifier = Modifier.size(22.dp))
         }
-
-        Spacer(
-            Modifier.height(30.dp)
-        )
-
-        // ======================================
-        // PERFIL DE GOOGLE - FASE 18.3
-        // ======================================
-
-        ProfileSettingsSection(
-            userId = userId
-        )
-
-        Spacer(
-            Modifier.height(30.dp)
-        )
-
-        HorizontalDivider(
-            color = BorderDark
-        )
-
-        Spacer(
-            Modifier.height(28.dp)
-        )
-
-        // ======================================
-        // NOTIFICACIONES - FASE 18.1
-        // ======================================
-
-        NotificationSettingsSection(
-            userId = userId
-        )
-
-        Spacer(
-            Modifier.height(32.dp)
-        )
-
-        HorizontalDivider(
-            color = BorderDark
-        )
-
-        Spacer(
-            Modifier.height(28.dp)
-        )
-
-        // ======================================
-        // PREFERENCIAS - FASE 18.2
-        // ======================================
-
-        AppPreferencesSection(
-
-            workspaces = workspaces,
-
-            preferences = preferences,
-
-            store = preferencesStore,
-
-            onPreferencesChanged =
-                onPreferencesChanged
-        )
-
-        Spacer(
-            Modifier.height(32.dp)
-        )
-
-        HorizontalDivider(
-            color = BorderDark
-        )
-
-        Spacer(
-            Modifier.height(20.dp)
-        )
-
-        // ======================================
-        // CERRAR SESIÓN
-        // ======================================
-
-        OutlinedButton(
-
-            onClick = onSignOut,
-
-            modifier = Modifier.fillMaxWidth()
-
-        ) {
-
-            Icon(
-
-                imageVector = GastifyIcons.logout,
-
-                contentDescription = null,
-
-                tint = ExpenseRed
-            )
-
-            Spacer(
-                Modifier.width(8.dp)
-            )
-
-            Text(
-
-                text = "Cerrar sesión",
-
-                color = ExpenseRed,
-
-                fontWeight = FontWeight.SemiBold
-            )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, color = TextSecondary, fontSize = 12.sp)
         }
-
-        Spacer(
-            Modifier.height(24.dp)
-        )
+        Icon(GastifyIcons.next, contentDescription = null, tint = TextSecondary)
     }
 }

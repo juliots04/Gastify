@@ -26,6 +26,7 @@ import com.example.gastify.data.model.Category
 import com.example.gastify.data.model.Movement
 import com.example.gastify.data.model.MovementType
 import com.example.gastify.data.model.Workspace
+import com.example.gastify.ui.components.rememberPreferredAccount
 import com.example.gastify.ui.components.GastifyIcons
 import com.example.gastify.ui.theme.*
 import com.example.gastify.viewmodel.AccountViewModel
@@ -120,6 +121,7 @@ fun MovementsScreen(
     val movementState by movementVm.uiState.collectAsState()
 
     val accountState by accountVm.uiState.collectAsState()
+    val (preferredAccountId) = rememberPreferredAccount(userId, workspace.id)
 
     val categoryState by categoryVm.uiState.collectAsState()
 
@@ -206,8 +208,8 @@ fun MovementsScreen(
 
         type = MovementType.EXPENSE.name
 
-        accountId = accountState.accounts
-            .firstOrNull()?.id.orEmpty()
+        accountId = (accountState.accounts.firstOrNull { it.id == preferredAccountId }
+            ?: accountState.accounts.firstOrNull())?.id.orEmpty()
 
         categoryId = categoryState.categories
             .firstOrNull {

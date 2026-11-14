@@ -3,7 +3,14 @@ package com.example.gastify.ui.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
 
 object GastifyIcons {
 
@@ -22,7 +29,7 @@ object GastifyIcons {
     val next: ImageVector = Icons.Outlined.ChevronRight
     val edit: ImageVector = Icons.Outlined.Edit
     val delete: ImageVector = Icons.Outlined.DeleteOutline
-    val logout: ImageVector = Icons.Outlined.Logout
+    val logout: ImageVector = Icons.AutoMirrored.Outlined.Logout
     val expand: ImageVector = Icons.Outlined.ExpandMore
     val fingerprint: ImageVector = Icons.Outlined.Fingerprint
 
@@ -58,6 +65,19 @@ object GastifyIcons {
 
         return when (value) {
 
+            "withdraw" -> Icons.Outlined.Atm
+            "mobilepay" -> Icons.Outlined.PhoneAndroid
+            "deposit" -> Icons.Outlined.AccountBalanceWallet
+            "receive" -> Icons.Outlined.SouthWest
+            "salary" -> Icons.Outlined.Payments
+            "refund" -> Icons.Outlined.CurrencyExchange
+            "gift" -> Icons.Outlined.Redeem
+            "recharge" -> Icons.Outlined.AddCard
+            "cardpay" -> Icons.Outlined.CreditCard
+            "tap" -> Icons.Outlined.Contactless
+            "transfer" -> Icons.Outlined.SwapHoriz
+            "train" -> Icons.Outlined.Train
+            "education" -> Icons.Outlined.School
             "bus", "🚌" -> Icons.Outlined.DirectionsBus
 
             "taxi", "🚕" -> Icons.Outlined.LocalTaxi
@@ -101,36 +121,28 @@ data class CategoryIconOption(
 )
 
 val categoryIconOptions = listOf(
-
-    CategoryIconOption("bus", "Autobús"),
-
-    CategoryIconOption("taxi", "Taxi"),
-
-    CategoryIconOption("car", "Auto"),
-
-    CategoryIconOption("food", "Comida"),
-
-    CategoryIconOption("shopping", "Compras"),
-
-    CategoryIconOption("bills", "Servicios"),
-
+    CategoryIconOption("cardpay", "Pago con tarjeta"),
+    CategoryIconOption("recharge", "Recarga de tarjeta"),
+    CategoryIconOption("mobilepay", "Pago con Yape o Plin"),
+    CategoryIconOption("bills", "Pago de servicios"),
+    CategoryIconOption("bus", "Pago de pasaje"),
+    CategoryIconOption("taxi", "Pago de taxi"),
+    CategoryIconOption("food", "Pago de comida"),
+    CategoryIconOption("money", "Pago en efectivo"),
+    CategoryIconOption("receive", "Recibir dinero"),
+    CategoryIconOption("salary", "Recibir sueldo"),
+    CategoryIconOption("deposit", "Depósito de dinero"),
+    CategoryIconOption("withdraw", "Retiro de efectivo"),
+    CategoryIconOption("transfer", "Transferencia"),
+    CategoryIconOption("tap", "Pago sin contacto"),
+    CategoryIconOption("health", "Pago de salud"),
+    CategoryIconOption("home", "Pago de vivienda"),
+    CategoryIconOption("receipt", "Otros pagos"),
+    CategoryIconOption("wallet", "Billetera digital"),
+    CategoryIconOption("savings", "Ahorro"),
     CategoryIconOption("work", "Trabajo"),
-
-    CategoryIconOption("money", "Dinero"),
-
     CategoryIconOption("stock", "Inventario"),
-
-    CategoryIconOption("home", "Hogar"),
-
-    CategoryIconOption("receipt", "Recibos"),
-
-    CategoryIconOption("gaming", "Juegos"),
-
-    CategoryIconOption("health", "Salud"),
-
-    CategoryIconOption("bank", "Banco"),
-
-    CategoryIconOption("wallet", "Billetera"),
-
-    CategoryIconOption("savings", "Ahorros")
+    CategoryIconOption("bank", "Cuenta bancaria"),
+    CategoryIconOption("car", "Vehículo"),
+    CategoryIconOption("gaming", "Entretenimiento")
 )

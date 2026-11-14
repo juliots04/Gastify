@@ -49,7 +49,7 @@ import java.util.Locale
 // DESCARGAR FOTO DE GOOGLE
 // ==========================================
 
-private suspend fun loadGoogleAvatar(
+internal suspend fun loadGoogleAvatar(
     photoUrl: String?
 ): Bitmap? = withContext(Dispatchers.IO) {
 
