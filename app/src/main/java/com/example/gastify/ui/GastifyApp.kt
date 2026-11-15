@@ -86,11 +86,6 @@ private enum class MainSection(
         GastifyIcons.movements
     ),
 
-    WORKSPACES(
-        "Espacios",
-        GastifyIcons.workspaces
-    ),
-
     STATISTICS(
         "Estadísticas",
         GastifyIcons.statistics
@@ -308,16 +303,6 @@ fun GastifyApp(
         )
     }
 
-    var selectedMovementWorkspaceId by rememberSaveable(userId) {
-
-        mutableStateOf<String?>(null)
-    }
-
-    var selectedStatisticsWorkspaceId by rememberSaveable(userId) {
-
-        mutableStateOf<String?>(null)
-    }
-
     var selectedHomeWorkspaceId by remember(userId) {
 
         mutableStateOf<String?>(null)
@@ -345,6 +330,13 @@ fun GastifyApp(
                 it in availableWorkspaceIds
             }
             ?: preferredWorkspaceId
+
+    val activeWorkspace =
+        workspaceState.workspaces
+            .firstOrNull {
+                it.id == effectiveHomeWorkspaceId
+            }
+            ?: workspaceState.workspaces.firstOrNull()
 
     // ======================================
     // REGISTRAR ESPACIO UTILIZADO
@@ -409,20 +401,6 @@ fun GastifyApp(
                 it.id == selectedWorkspaceId
             }
 
-    val openedMovementWorkspace =
-        workspaceState.workspaces
-            .firstOrNull {
-
-                it.id == selectedMovementWorkspaceId
-            }
-
-    val openedStatisticsWorkspace =
-        workspaceState.workspaces
-            .firstOrNull {
-
-                it.id == selectedStatisticsWorkspaceId
-            }
-
     val currentWorkspaceSection =
         WorkspaceSection.entries
             .firstOrNull {
@@ -439,8 +417,6 @@ fun GastifyApp(
 
         enabled =
             openedWorkspace != null ||
-                openedMovementWorkspace != null ||
-                openedStatisticsWorkspace != null ||
                 currentSection != MainSection.HOME
 
     ) {
@@ -449,20 +425,9 @@ fun GastifyApp(
             currentSection == MainSection.SETTINGS && settingsPage != null -> { settingsPage = null }
             currentSection == MainSection.SETTINGS -> { selectedSection = settingsReturnSection }
 
-
             openedWorkspace != null -> {
 
                 selectedWorkspaceId = null
-            }
-
-            openedMovementWorkspace != null -> {
-
-                selectedMovementWorkspaceId = null
-            }
-
-            openedStatisticsWorkspace != null -> {
-
-                selectedStatisticsWorkspaceId = null
             }
 
             else -> {
@@ -479,8 +444,6 @@ fun GastifyApp(
 
     LaunchedEffect(
         selectedWorkspaceId,
-        selectedMovementWorkspaceId,
-        selectedStatisticsWorkspaceId,
         workspaceState.isLoading,
         workspaceState.workspaces
     ) {
@@ -493,22 +456,6 @@ fun GastifyApp(
             ) {
 
                 selectedWorkspaceId = null
-            }
-
-            if (
-                selectedMovementWorkspaceId != null &&
-                openedMovementWorkspace == null
-            ) {
-
-                selectedMovementWorkspaceId = null
-            }
-
-            if (
-                selectedStatisticsWorkspaceId != null &&
-                openedStatisticsWorkspace == null
-            ) {
-
-                selectedStatisticsWorkspaceId = null
             }
         }
     }
@@ -539,8 +486,6 @@ fun GastifyApp(
 
     val inSubscreen =
         openedWorkspace != null ||
-            openedMovementWorkspace != null ||
-            openedStatisticsWorkspace != null ||
             currentSection == MainSection.SETTINGS
 
     // ======================================
@@ -672,7 +617,24 @@ fun GastifyApp(
 
             if (!inSubscreen) {
 
-                GastifyHeader(photoUrl = FirebaseAuth.getInstance().currentUser?.photoUrl?.toString(), onOpenAccount = { settingsPage = null; settingsReturnSection = selectedSection; selectedSection = MainSection.SETTINGS.name })
+                GastifyHeader(
+                    photoUrl = FirebaseAuth.getInstance().currentUser?.photoUrl?.toString(),
+                    workspaces = workspaceState.workspaces,
+                    activeWorkspace = activeWorkspace,
+                    onSelectWorkspace = { workspace ->
+                        recordWorkspaceUsage(workspace.id)
+                    },
+                    onManageWorkspaces = {
+                        settingsPage = "Espacios"
+                        settingsReturnSection = selectedSection
+                        selectedSection = MainSection.SETTINGS.name
+                    },
+                    onOpenAccount = {
+                        settingsPage = null
+                        settingsReturnSection = selectedSection
+                        selectedSection = MainSection.SETTINGS.name
+                    }
+                )
             }
 
             // ==============================
@@ -719,8 +681,9 @@ fun GastifyApp(
                                     selectedWorkspaceId = null
                                 },
                                 onOpenMovements = {
-                                    selectedMovementWorkspaceId = openedWorkspace.id
+                                    recordWorkspaceUsage(openedWorkspace.id)
                                     selectedWorkspaceId = null
+                                    selectedSection = MainSection.MOVEMENTS.name
                                 }
                             )
                         }
@@ -791,44 +754,6 @@ fun GastifyApp(
                         }
                     }
 
-                } else if (
-                    openedMovementWorkspace != null
-                ) {
-
-                    // ==================================
-                    // MOVIMIENTOS FINANCIEROS
-                    // ==================================
-
-                    MovementsScreen(
-                        userId = userId,
-
-                        workspace =
-                            openedMovementWorkspace,
-
-                        onBack = {
-                            selectedMovementWorkspaceId = null
-                        }
-                    )
-
-                } else if (
-                    openedStatisticsWorkspace != null
-                ) {
-
-                    // ==================================
-                    // ESTADÍSTICAS
-                    // ==================================
-
-                    StatisticsScreen(
-                        userId = userId,
-
-                        workspace =
-                            openedStatisticsWorkspace,
-
-                        onBack = {
-                            selectedStatisticsWorkspaceId = null
-                        }
-                    )
-
                 } else {
 
                     // ==================================
@@ -844,77 +769,56 @@ fun GastifyApp(
                         MainSection.HOME -> {
 
                             GastifyHomeScreen(
-
-                                modifier =
-                                    Modifier.fillMaxSize(),
-
+                                modifier = Modifier.fillMaxSize(),
                                 userId = userId,
-
-                                workspaces =
-                                    workspaceState.workspaces,
-
-                                selectedWorkspaceId =
-                                    effectiveHomeWorkspaceId,
-
-                                onSelectWorkspace = {
-                                        workspaceId ->
-
-                                    selectedHomeWorkspaceId =
-                                        workspaceId
-
-                                    if (
-                                        workspaceId in availableWorkspaceIds
-                                    ) {
-
-                                        recordWorkspaceUsage(
-                                            workspaceId
-                                        )
-                                    }
+                                workspaces = workspaceState.workspaces,
+                                selectedWorkspaceId = effectiveHomeWorkspaceId,
+                                onSelectWorkspace = { workspaceId ->
+                                    recordWorkspaceUsage(workspaceId)
                                 },
-
                                 onOpenSpaces = {
-
-                                    selectedSection =
-                                        MainSection.WORKSPACES.name
+                                    settingsPage = "Espacios"
+                                    settingsReturnSection = selectedSection
+                                    selectedSection = MainSection.SETTINGS.name
                                 },
-
-                                onOpenAccounts = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.ACCOUNTS.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
+                                onOpenCategories = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.CATEGORIES.name
+                                    selectedWorkspaceId = workspace.id
                                 },
-
-                                onOpenMovements = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedMovementWorkspaceId =
-                                        workspace.id
+                                onOpenAccounts = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.ACCOUNTS.name
+                                    selectedWorkspaceId = workspace.id
                                 },
-
-                                onOpenReminders = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.REMINDERS.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
+                                onOpenMovements = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedSection = MainSection.MOVEMENTS.name
+                                },
+                                onOpenReminders = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.REMINDERS.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenBudgets = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.BUDGETS.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenInventory = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.INVENTORY.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenCommerce = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.COMMERCE.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenProfitability = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.PROFITABILITY.name
+                                    selectedWorkspaceId = workspace.id
                                 }
                             )
                         }
@@ -924,171 +828,26 @@ fun GastifyApp(
                         // ==============================
 
                         MainSection.MOVEMENTS -> {
-
-                            WorkspacePicker(
-
-                                modifier =
-                                    Modifier.fillMaxSize(),
-
-                                title = "Movimientos",
-
-                                subtitle =
-                                    "Selecciona un espacio para consultar ingresos y gastos.",
-
-                                buttonText =
-                                    "Ver movimientos",
-
-                                buttonIcon =
-                                    GastifyIcons.movements,
-
-                                workspaces =
-                                    workspaceState.workspaces,
-
-                                preferredWorkspaceId =
-                                    preferredWorkspaceId,
-
-                                onOpenWorkspace = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedMovementWorkspaceId =
-                                        workspace.id
-                                }
-                            )
-                        }
-
-                        // ==============================
-                        // ESPACIOS
-                        // ==============================
-
-                        MainSection.WORKSPACES -> {
-
-                            WorkspacesScreen(
-
-                                modifier =
-                                    Modifier.fillMaxSize(),
-
-                                workspaces =
-                                    workspaceState.workspaces,
-
-                                isSaving =
-                                    workspaceState.isSaving,
-
-                                onAddWorkspace = {
-
-                                    workspaceVm.createWorkspace(
-                                        it
-                                    )
-                                },
-
-                                onDeleteWorkspace = {
-
-                                    workspaceVm.deleteWorkspace(
-                                        it
-                                    )
-                                },
-
-                                onOpenCategories = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.CATEGORIES.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenAccounts = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.ACCOUNTS.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenReminders = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.REMINDERS.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenBudgets = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.BUDGETS.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenInventory = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.INVENTORY.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenCommerce = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.COMMERCE.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                },
-
-                                onOpenProfitability = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedWorkspaceSection =
-                                        WorkspaceSection.PROFITABILITY.name
-
-                                    selectedWorkspaceId =
-                                        workspace.id
-                                }
-                            )
+                            if (activeWorkspace != null) {
+                                MovementsScreen(
+                                    userId = userId,
+                                    workspace = activeWorkspace,
+                                    showBackButton = false,
+                                    onBack = {
+                                        selectedSection = MainSection.HOME.name
+                                    }
+                                )
+                            } else {
+                                NoActiveWorkspaceView(
+                                    title = "Movimientos",
+                                    message = "Crea un espacio para comenzar a registrar tus movimientos.",
+                                    onCreateSpace = {
+                                        settingsPage = "Espacios"
+                                        settingsReturnSection = selectedSection
+                                        selectedSection = MainSection.SETTINGS.name
+                                    }
+                                )
+                            }
                         }
 
                         // ==============================
@@ -1096,40 +855,26 @@ fun GastifyApp(
                         // ==============================
 
                         MainSection.STATISTICS -> {
-
-                            WorkspacePicker(
-
-                                modifier =
-                                    Modifier.fillMaxSize(),
-
-                                title = "Estadísticas",
-
-                                subtitle =
-                                    "Selecciona un espacio para analizar tus finanzas.",
-
-                                buttonText =
-                                    "Ver estadísticas",
-
-                                buttonIcon =
-                                    GastifyIcons.statistics,
-
-                                workspaces =
-                                    workspaceState.workspaces,
-
-                                preferredWorkspaceId =
-                                    preferredWorkspaceId,
-
-                                onOpenWorkspace = {
-                                        workspace ->
-
-                                    recordWorkspaceUsage(
-                                        workspace.id
-                                    )
-
-                                    selectedStatisticsWorkspaceId =
-                                        workspace.id
-                                }
-                            )
+                            if (activeWorkspace != null) {
+                                StatisticsScreen(
+                                    userId = userId,
+                                    workspace = activeWorkspace,
+                                    showBackButton = false,
+                                    onBack = {
+                                        selectedSection = MainSection.HOME.name
+                                    }
+                                )
+                            } else {
+                                NoActiveWorkspaceView(
+                                    title = "Estadísticas",
+                                    message = "Crea un espacio para consultar las estadísticas de tus finanzas.",
+                                    onCreateSpace = {
+                                        settingsPage = "Espacios"
+                                        settingsReturnSection = selectedSection
+                                        selectedSection = MainSection.SETTINGS.name
+                                    }
+                                )
+                            }
                         }
 
                         // ==============================
@@ -1139,47 +884,72 @@ fun GastifyApp(
                         MainSection.SETTINGS -> {
 
                             SettingsScreen(
-
-                                modifier =
-                                    Modifier.fillMaxSize(),
-
+                                modifier = Modifier.fillMaxSize(),
                                 page = settingsPage,
                                 onOpenPage = { settingsPage = it },
-                                onBack = { if (settingsPage != null) settingsPage = null else selectedSection = settingsReturnSection },
-
-                                userId = userId,
-
-                                workspaces =
-                                    workspaceState.workspaces,
-
-                                preferences =
-                                    appPreferences,
-
-                                preferencesStore =
-                                    preferencesStore,
-
-                                onPreferencesChanged = {
-                                        updated ->
-
-                                    onPreferencesUpdated(
-                                        updated
-                                    )
+                                onBack = {
+                                    if (settingsPage != null) {
+                                        settingsPage = null
+                                    } else {
+                                        selectedSection = settingsReturnSection
+                                    }
                                 },
-
+                                userId = userId,
+                                workspaces = workspaceState.workspaces,
+                                isSavingWorkspace = workspaceState.isSaving,
+                                onAddWorkspace = { name, type ->
+                                    workspaceVm.createWorkspace(name, type)
+                                },
+                                onUpdateWorkspace = { id, name, type ->
+                                    workspaceVm.updateWorkspace(id, name, type)
+                                },
+                                onDeleteWorkspace = { name ->
+                                    workspaceVm.deleteWorkspace(name)
+                                },
+                                onOpenCategories = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.CATEGORIES.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenAccounts = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.ACCOUNTS.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenReminders = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.REMINDERS.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenBudgets = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.BUDGETS.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenInventory = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.INVENTORY.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenCommerce = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.COMMERCE.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                onOpenProfitability = { workspace ->
+                                    recordWorkspaceUsage(workspace.id)
+                                    selectedWorkspaceSection = WorkspaceSection.PROFITABILITY.name
+                                    selectedWorkspaceId = workspace.id
+                                },
+                                preferences = appPreferences,
+                                preferencesStore = preferencesStore,
+                                onPreferencesChanged = { updated ->
+                                    onPreferencesUpdated(updated)
+                                },
                                 onSignOut = {
-
-                                    ReminderScheduler.deactivateUser(
-                                        context
-                                    )
-
-                                    BudgetAlertWorker.cancelScheduled(
-                                        context
-                                    )
-
-                                    StockAlertWorker.cancelScheduled(
-                                        context
-                                    )
-
+                                    ReminderScheduler.deactivateUser(context)
+                                    BudgetAlertWorker.cancelScheduled(context)
+                                    StockAlertWorker.cancelScheduled(context)
                                     onSignOut()
                                 }
                             )
@@ -1484,6 +1254,17 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     userId: String,
     workspaces: List<Workspace>,
+    isSavingWorkspace: Boolean = false,
+    onAddWorkspace: (name: String, type: String) -> Unit = { _, _ -> },
+    onUpdateWorkspace: (id: String, name: String, type: String) -> Unit = { _, _, _ -> },
+    onDeleteWorkspace: (String) -> Unit = {},
+    onOpenCategories: (Workspace) -> Unit = {},
+    onOpenAccounts: (Workspace) -> Unit = {},
+    onOpenReminders: (Workspace) -> Unit = {},
+    onOpenBudgets: (Workspace) -> Unit = {},
+    onOpenInventory: (Workspace) -> Unit = {},
+    onOpenCommerce: (Workspace) -> Unit = {},
+    onOpenProfitability: (Workspace) -> Unit = {},
     preferences: AppPreferences,
     preferencesStore: AppPreferencesStore,
     onPreferencesChanged: (AppPreferences) -> Unit,
@@ -1494,27 +1275,98 @@ private fun SettingsScreen(
             IconButton(onClick = onBack) { Icon(GastifyIcons.back, contentDescription = "Volver", tint = Color.White) }
             Text(page ?: "Cuenta", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
-            when (page) {
-                "Perfil" -> ProfileSettingsSection(userId = userId)
-                "Notificaciones" -> NotificationSettingsSection(userId = userId)
-                "Preferencias" -> AppPreferencesSection(workspaces = workspaces, preferences = preferences, store = preferencesStore, onPreferencesChanged = onPreferencesChanged)
-                else -> {
-                    Text("Configuración de la cuenta", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 18.dp))
-                    AccountSettingsRow("Perfil", "Información de tu cuenta", Icons.Outlined.Person) { onOpenPage("Perfil") }
-                    Spacer(Modifier.height(10.dp))
-                    AccountSettingsRow("Notificaciones", "Administra tus avisos", Icons.Outlined.Notifications) { onOpenPage("Notificaciones") }
-                    Spacer(Modifier.height(10.dp))
-                    AccountSettingsRow("Preferencias", "Personaliza la aplicación", Icons.Outlined.Tune) { onOpenPage("Preferencias") }
-                    Spacer(Modifier.height(24.dp))
-                    OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
-                        Icon(GastifyIcons.logout, contentDescription = null, tint = ExpenseRed)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Cerrar sesión", color = ExpenseRed, fontWeight = FontWeight.SemiBold)
+        if (page == "Espacios") {
+            WorkspacesScreen(
+                modifier = Modifier.fillMaxSize(),
+                workspaces = workspaces,
+                isSaving = isSavingWorkspace,
+                onAddWorkspace = onAddWorkspace,
+                onUpdateWorkspace = onUpdateWorkspace,
+                onDeleteWorkspace = onDeleteWorkspace,
+                onOpenCategories = onOpenCategories,
+                onOpenAccounts = onOpenAccounts,
+                onOpenReminders = onOpenReminders,
+                onOpenBudgets = onOpenBudgets,
+                onOpenInventory = onOpenInventory,
+                onOpenCommerce = onOpenCommerce,
+                onOpenProfitability = onOpenProfitability
+            )
+        } else {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
+                when (page) {
+                    "Perfil" -> ProfileSettingsSection(userId = userId)
+                    "Notificaciones" -> NotificationSettingsSection(userId = userId)
+                    "Preferencias" -> AppPreferencesSection(workspaces = workspaces, preferences = preferences, store = preferencesStore, onPreferencesChanged = onPreferencesChanged)
+                    else -> {
+                        Text("Configuración de la cuenta", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 18.dp))
+                        AccountSettingsRow("Espacios", "Configura tus espacios Personal y Negocio", GastifyIcons.workspaces) { onOpenPage("Espacios") }
+                        Spacer(Modifier.height(10.dp))
+                        AccountSettingsRow("Perfil", "Información de tu cuenta", Icons.Outlined.Person) { onOpenPage("Perfil") }
+                        Spacer(Modifier.height(10.dp))
+                        AccountSettingsRow("Notificaciones", "Administra tus avisos", Icons.Outlined.Notifications) { onOpenPage("Notificaciones") }
+                        Spacer(Modifier.height(10.dp))
+                        AccountSettingsRow("Preferencias", "Personaliza la aplicación", Icons.Outlined.Tune) { onOpenPage("Preferencias") }
+                        Spacer(Modifier.height(24.dp))
+                        OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                            Icon(GastifyIcons.logout, contentDescription = null, tint = ExpenseRed)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Cerrar sesión", color = ExpenseRed, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun NoActiveWorkspaceView(
+    title: String,
+    message: String,
+    onCreateSpace: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(AmoledBlack),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier.padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = GastifyIcons.workspaces,
+                contentDescription = null,
+                tint = PrimaryGreen,
+                modifier = Modifier.size(52.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = title,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = message,
+                fontSize = 14.sp,
+                color = TextSecondary,
+                lineHeight = 20.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = onCreateSpace,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryGreen,
+                    contentColor = AmoledBlack
+                )
+            ) {
+                Icon(GastifyIcons.add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Crear o configurar espacio", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

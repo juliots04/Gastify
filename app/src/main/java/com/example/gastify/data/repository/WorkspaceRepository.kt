@@ -56,6 +56,7 @@ class WorkspaceRepository(
                             Workspace(
                                 id = document.id,
                                 name = name,
+                                type = document.getString("type") ?: "PERSONAL",
                                 createdAt = document.getTimestamp(
                                     "createdAt"
                                 )
@@ -73,7 +74,8 @@ class WorkspaceRepository(
     // ==============================
 
     suspend fun createWorkspace(
-        name: String
+        name: String,
+        type: String = "PERSONAL"
     ) {
 
         val cleanName = name.trim()
@@ -88,6 +90,7 @@ class WorkspaceRepository(
 
         val data = hashMapOf<String, Any>(
             "name" to cleanName,
+            "type" to type.uppercase(),
             "createdAt" to FieldValue.serverTimestamp()
         )
 
@@ -95,6 +98,55 @@ class WorkspaceRepository(
 
             workspaceCollection
                 .add(data)
+                .addOnSuccessListener {
+
+                    if (continuation.isActive) {
+                        continuation.resume(Unit)
+                    }
+                }
+                .addOnFailureListener { exception ->
+
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(exception)
+                    }
+                }
+        }
+    }
+
+    // ==============================
+    // ACTUALIZAR ESPACIO
+    // ==============================
+
+    suspend fun updateWorkspace(
+        workspaceId: String,
+        name: String,
+        type: String
+    ) {
+
+        require(workspaceId.isNotBlank()) {
+            "Identificador de espacio inválido."
+        }
+
+        val cleanName = name.trim()
+
+        require(cleanName.isNotEmpty()) {
+            "El nombre no puede estar vacío."
+        }
+
+        require(cleanName.length <= 60) {
+            "El nombre no puede superar los 60 caracteres."
+        }
+
+        val data = mapOf<String, Any>(
+            "name" to cleanName,
+            "type" to type.uppercase()
+        )
+
+        suspendCancellableCoroutine<Unit> { continuation ->
+
+            workspaceCollection
+                .document(workspaceId)
+                .update(data)
                 .addOnSuccessListener {
 
                     if (continuation.isActive) {

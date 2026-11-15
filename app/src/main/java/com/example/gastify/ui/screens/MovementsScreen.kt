@@ -91,7 +91,8 @@ private fun formatMovementDate(movement: Movement): String {
 fun MovementsScreen(
     userId: String,
     workspace: Workspace,
-    onBack: () -> Unit
+    showBackButton: Boolean = true,
+    onBack: () -> Unit = {}
 ) {
 
     val movementVm: MovementViewModel = viewModel(
@@ -258,22 +259,24 @@ fun MovementsScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                TextButton(
-                    onClick = onBack
-                ) {
+                if (showBackButton) {
+                    TextButton(
+                        onClick = onBack
+                    ) {
 
-                    Icon(
-                        imageVector = GastifyIcons.back,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                        Icon(
+                            imageVector = GastifyIcons.back,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
 
-                    Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(6.dp))
 
-                    Text("Volver")
+                        Text("Volver")
+                    }
+
+                    Spacer(Modifier.height(12.dp))
                 }
-
-                Spacer(Modifier.height(12.dp))
 
                 Text(
                     text = "Movimientos",

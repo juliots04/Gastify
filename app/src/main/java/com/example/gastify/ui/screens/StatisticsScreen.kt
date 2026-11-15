@@ -135,7 +135,8 @@ private fun movementDay(
 fun StatisticsScreen(
     userId: String,
     workspace: Workspace,
-    onBack: () -> Unit
+    showBackButton: Boolean = true,
+    onBack: () -> Unit = {}
 ) {
 
     // ======================================
@@ -470,22 +471,24 @@ fun StatisticsScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                TextButton(
-                    onClick = onBack
-                ) {
+                if (showBackButton) {
+                    TextButton(
+                        onClick = onBack
+                    ) {
 
-                    Icon(
-                        imageVector = GastifyIcons.back,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                        Icon(
+                            imageVector = GastifyIcons.back,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
 
-                    Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(6.dp))
 
-                    Text("Volver")
+                        Text("Volver")
+                    }
+
+                    Spacer(Modifier.height(12.dp))
                 }
-
-                Spacer(Modifier.height(12.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically

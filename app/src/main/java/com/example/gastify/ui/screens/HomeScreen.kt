@@ -6,6 +6,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.PointOfSale
+import androidx.compose.material.icons.outlined.PieChart
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Storefront
 
 import androidx.compose.material3.*
 
@@ -105,9 +114,14 @@ fun GastifyHomeScreen(
     selectedWorkspaceId: String?,
     onSelectWorkspace: (String) -> Unit,
     onOpenSpaces: () -> Unit,
+    onOpenCategories: (Workspace) -> Unit = {},
     onOpenAccounts: (Workspace) -> Unit,
     onOpenMovements: (Workspace) -> Unit,
-    onOpenReminders: (Workspace) -> Unit
+    onOpenReminders: (Workspace) -> Unit,
+    onOpenBudgets: (Workspace) -> Unit = {},
+    onOpenInventory: (Workspace) -> Unit = {},
+    onOpenCommerce: (Workspace) -> Unit = {},
+    onOpenProfitability: (Workspace) -> Unit = {}
 ) {
 
     val workspace = workspaces.firstOrNull {
@@ -182,21 +196,27 @@ fun GastifyHomeScreen(
         workspace = workspace,
         workspaces = workspaces,
         onSelectWorkspace = onSelectWorkspace,
-        onOpenAccounts = {
-            onOpenAccounts(workspace)
-        },
-        onOpenMovements = {
-            onOpenMovements(workspace)
-        },
-        onOpenReminders = {
-            onOpenReminders(workspace)
-        }
+        onOpenCategories = { onOpenCategories(workspace) },
+        onOpenAccounts = { onOpenAccounts(workspace) },
+        onOpenMovements = { onOpenMovements(workspace) },
+        onOpenReminders = { onOpenReminders(workspace) },
+        onOpenBudgets = { onOpenBudgets(workspace) },
+        onOpenInventory = { onOpenInventory(workspace) },
+        onOpenCommerce = { onOpenCommerce(workspace) },
+        onOpenProfitability = { onOpenProfitability(workspace) }
     )
 }
 
 // ==========================================
 // DASHBOARD DEL ESPACIO
 // ==========================================
+
+private data class WorkspaceModuleItem(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit
+)
 
 @Composable
 private fun DashboardWorkspaceContent(
@@ -205,9 +225,14 @@ private fun DashboardWorkspaceContent(
     workspace: Workspace,
     workspaces: List<Workspace>,
     onSelectWorkspace: (String) -> Unit,
+    onOpenCategories: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenMovements: () -> Unit,
-    onOpenReminders: () -> Unit
+    onOpenReminders: () -> Unit,
+    onOpenBudgets: () -> Unit,
+    onOpenInventory: () -> Unit,
+    onOpenCommerce: () -> Unit,
+    onOpenProfitability: () -> Unit
 ) {
 
     val context = LocalContext.current
@@ -506,36 +531,68 @@ private fun DashboardWorkspaceContent(
                 }
 
                 // ==================================
-                // NAVEGACIÓN RÁPIDA
+                // MÓDULOS DEL ESPACIO
                 // ==================================
 
                 item {
-
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (workspace.isBusiness) "Módulos de negocio" else "Módulos del espacio",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (workspace.isBusiness) Color(0xFF64B5F6).copy(alpha = 0.16f) else PrimaryGreen.copy(alpha = 0.16f)
+                        ) {
+                            Text(
+                                text = workspace.typeLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (workspace.isBusiness) Color(0xFF90CAF9) else PrimaryGreen,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                val modules = buildList {
+                    add(WorkspaceModuleItem("Categorías", "Clasificación de gastos", GastifyIcons.categories, onOpenCategories))
+                    add(WorkspaceModuleItem("Cuentas", "Bancos y billeteras", GastifyIcons.accounts, onOpenAccounts))
+                    add(WorkspaceModuleItem("Recordatorios", "Pagos recurrentes", Icons.Outlined.NotificationsActive, onOpenReminders))
+                    add(WorkspaceModuleItem("Presupuestos", "Límites financieros", Icons.Outlined.PieChart, onOpenBudgets))
+                    if (workspace.isBusiness) {
+                        add(WorkspaceModuleItem("Inventario", "Productos y stock", Icons.Outlined.Inventory2, onOpenInventory))
+                        add(WorkspaceModuleItem("Compras y ventas", "Operaciones de comercio", Icons.Outlined.PointOfSale, onOpenCommerce))
+                        add(WorkspaceModuleItem("Rentabilidad", "Márgenes y ganancias", Icons.AutoMirrored.Outlined.TrendingUp, onOpenProfitability))
+                    }
+                }
+
+                items(modules.chunked(2)) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-
-                        DashboardQuickButton(
-                            modifier = Modifier.weight(1f),
-                            title = "Cuentas",
-                            icon = GastifyIcons.accounts,
-                            onClick = onOpenAccounts
-                        )
-
-                        DashboardQuickButton(
-                            modifier = Modifier.weight(1f),
-                            title = "Movimientos",
-                            icon = GastifyIcons.movements,
-                            onClick = onOpenMovements
-                        )
-
-                        DashboardQuickButton(
-                            modifier = Modifier.weight(1f),
-                            title = "Pasajes",
-                            icon = GastifyIcons.account("TRANSPORT"),
-                            onClick = onOpenReminders
-                        )
+                        row.forEach { module ->
+                            HomeModuleButton(
+                                title = module.title,
+                                subtitle = module.subtitle,
+                                icon = module.icon,
+                                onClick = module.onClick,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (row.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
 
@@ -878,9 +935,9 @@ private fun DashboardWorkspaceSelector(
         ) {
 
             Icon(
-                imageVector = GastifyIcons.workspaces,
+                imageVector = if (workspace.isBusiness) Icons.Outlined.Storefront else Icons.Outlined.Person,
                 contentDescription = null,
-                tint = PrimaryGreen
+                tint = if (workspace.isBusiness) Color(0xFF64B5F6) else PrimaryGreen
             )
 
             Spacer(Modifier.width(10.dp))
@@ -892,6 +949,21 @@ private fun DashboardWorkspaceSelector(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = if (workspace.isBusiness) Color(0xFF64B5F6).copy(alpha = 0.16f) else PrimaryGreen.copy(alpha = 0.16f)
+            ) {
+                Text(
+                    text = workspace.typeLabel,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (workspace.isBusiness) Color(0xFF90CAF9) else PrimaryGreen,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
 
             Icon(
                 imageVector = GastifyIcons.expand,
@@ -912,11 +984,33 @@ private fun DashboardWorkspaceSelector(
 
                 DropdownMenuItem(
                     text = {
-
-                        Text(
-                            text = item.name,
-                            color = TextPrimary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (item.isBusiness) Icons.Outlined.Storefront else Icons.Outlined.Person,
+                                contentDescription = null,
+                                tint = if (item.isBusiness) Color(0xFF64B5F6) else PrimaryGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = item.name,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (item.isBusiness) Color(0xFF64B5F6).copy(alpha = 0.16f) else PrimaryGreen.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = item.typeLabel,
+                                    fontSize = 10.sp,
+                                    color = if (item.isBusiness) Color(0xFF90CAF9) else PrimaryGreen,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                     },
                     onClick = {
 
@@ -924,6 +1018,66 @@ private fun DashboardWorkspaceSelector(
 
                         expanded = false
                     }
+                )
+            }
+        }
+    }
+}
+
+// ==========================================
+// BOTÓN DE MÓDULO DEL ESPACIO
+// ==========================================
+
+@Composable
+private fun HomeModuleButton(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = CardDark,
+        border = BorderStroke(1.dp, BorderDark),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(PrimaryGreen.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = PrimaryGreen,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

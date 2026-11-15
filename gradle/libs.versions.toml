@@ -1,7 +1,7 @@
 [versions]
 
 # Android
-agp = "9.5.1"
+agp = "9.2.1"
 kotlin = "2.4.21"
 
 # AndroidX

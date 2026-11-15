@@ -83,12 +83,13 @@ class AppPreferencesStore(
             AppStartSection.HOME.name
         )
 
-        val section = AppStartSection.entries
-            .firstOrNull {
-
-                it.name == savedSection
-
-            } ?: AppStartSection.HOME
+        val section = when (savedSection) {
+            "WORKSPACES" -> AppStartSection.HOME
+            else -> AppStartSection.entries
+                .firstOrNull {
+                    it.name == savedSection
+                } ?: AppStartSection.HOME
+        }
 
         return AppPreferences(
 

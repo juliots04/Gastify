@@ -284,8 +284,9 @@ fun AppPreferencesSection(
                     containerColor = SurfaceDark
                 ) {
 
-                    AppStartSection.entries.forEach {
-                            section ->
+                    AppStartSection.entries
+                        .filter { it != AppStartSection.WORKSPACES }
+                        .forEach { section ->
 
                         DropdownMenuItem(
                             text = {

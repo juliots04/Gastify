@@ -89,7 +89,8 @@ class WorkspaceViewModel(
     // ==============================
 
     fun createWorkspace(
-        name: String
+        name: String,
+        type: String = "PERSONAL"
     ) {
 
         val cleanName = name.trim()
@@ -128,7 +129,7 @@ class WorkspaceViewModel(
 
             try {
 
-                repository.createWorkspace(cleanName)
+                repository.createWorkspace(cleanName, type)
 
             } catch (exception: Exception) {
 
@@ -136,6 +137,74 @@ class WorkspaceViewModel(
                     it.copy(
                         errorMessage = exception.localizedMessage
                             ?: "No se pudo crear el espacio."
+                    )
+                }
+
+            } finally {
+
+                _uiState.update {
+                    it.copy(isSaving = false)
+                }
+            }
+        }
+    }
+
+    // ==============================
+    // ACTUALIZAR ESPACIO
+    // ==============================
+
+    fun updateWorkspace(
+        workspaceId: String,
+        name: String,
+        type: String
+    ) {
+
+        val cleanName = name.trim()
+
+        if (cleanName.isEmpty()) {
+            return
+        }
+
+        if (_uiState.value.isSaving) {
+            return
+        }
+
+        val exists = _uiState.value.workspaces.any {
+            it.id != workspaceId &&
+                it.name.equals(cleanName, ignoreCase = true)
+        }
+
+        if (exists) {
+
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Ya existe otro espacio con ese nombre."
+                )
+            }
+
+            return
+        }
+
+        viewModelScope.launch {
+
+            _uiState.update {
+                it.copy(isSaving = true)
+            }
+
+            try {
+
+                repository.updateWorkspace(
+                    workspaceId,
+                    cleanName,
+                    type
+                )
+
+            } catch (exception: Exception) {
+
+                _uiState.update {
+                    it.copy(
+                        errorMessage = exception.localizedMessage
+                            ?: "No se pudo actualizar el espacio."
                     )
                 }
 

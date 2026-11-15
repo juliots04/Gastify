@@ -46,16 +46,42 @@ service cloud.firestore {
           'createdAt'
         ])
 
-        && data.keys().hasOnly([
-          'name',
-          'createdAt'
-        ])
+        && (
+          data.keys().hasOnly([
+            'name',
+            'createdAt'
+          ]) ||
+          (
+            data.keys().hasOnly([
+              'name',
+              'createdAt',
+              'type'
+            ])
+            && data.type in [
+              'PERSONAL',
+              'BUSINESS',
+              'NEGOCIO'
+            ]
+          )
+        )
 
         && data.name is string
         && data.name.size() > 0
         && data.name.size() <= 60
 
         && data.createdAt is timestamp;
+    }
+
+    function validWorkspaceUpdate(newData, oldData) {
+      return (
+        newData.keys().hasOnly(['name', 'createdAt', 'type']) ||
+        newData.keys().hasOnly(['name', 'createdAt'])
+      )
+      && newData.name is string
+      && newData.name.size() > 0
+      && newData.name.size() <= 60
+      && newData.createdAt == oldData.createdAt
+      && (!('type' in newData) || newData.type in ['PERSONAL', 'BUSINESS', 'NEGOCIO']);
     }
 
     // ====================================
@@ -279,7 +305,8 @@ service cloud.firestore {
         && request.resource.data.createdAt ==
            request.time;
 
-      allow update: if false;
+      allow update: if isOwner(userId)
+        && validWorkspaceUpdate(request.resource.data, resource.data);
 
       allow delete: if isOwner(userId);
     }
@@ -452,8 +479,6 @@ service cloud.firestore {
          ).data.lastMovementId == movementId;
 
       allow update: if false;
-
-      allow delete: if false;
     }
 
     // ====================================
