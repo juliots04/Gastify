@@ -140,16 +140,16 @@ fun GastifyHeader(
                         color = TextPrimary
                     )
 
-                    TextButton(
+                    IconButton(
                         onClick = {
                             showWorkspaceSheet = false
                             onManageWorkspaces()
                         }
                     ) {
-                        Text(
-                            text = "Gestionar",
-                            color = PrimaryGreen,
-                            fontWeight = FontWeight.SemiBold
+                        Icon(
+                            imageVector = GastifyIcons.settings,
+                            contentDescription = "Gestionar espacios",
+                            tint = Color.White
                         )
                     }
                 }
@@ -250,31 +250,6 @@ fun GastifyHeader(
                             }
                         }
                     }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        showWorkspaceSheet = false
-                        onManageWorkspaces()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, BorderDark)
-                ) {
-                    Icon(
-                        imageVector = GastifyIcons.settings,
-                        contentDescription = null,
-                        tint = PrimaryGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Configurar espacios en Ajustes",
-                        color = PrimaryGreen,
-                        fontSize = 14.sp
-                    )
                 }
             }
         }

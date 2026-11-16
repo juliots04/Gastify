@@ -54,8 +54,7 @@ class WorkspaceViewModel(
                 _uiState.update {
                     it.copy(
                         workspaces = workspaces,
-                        isLoading = false,
-                        errorMessage = null
+                        isLoading = false
                     )
                 }
             },
@@ -203,8 +202,7 @@ class WorkspaceViewModel(
 
                 _uiState.update {
                     it.copy(
-                        errorMessage = exception.localizedMessage
-                            ?: "No se pudo actualizar el espacio."
+                        errorMessage = "No se pudo actualizar el espacio. Comprueba la conexión y los permisos de Firestore."
                     )
                 }
 
